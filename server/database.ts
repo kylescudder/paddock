@@ -3,8 +3,7 @@ import { SQL } from "bun";
 // Created lazily so importing server code never needs a database (e.g. in the router).
 let pool: SQL | undefined;
 
-export async function connection(): Promise<SQL> {
-  if (pool) return pool;
+export async function databaseUrl(): Promise<string> {
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
   const url = new URL(process.env.DATABASE_URL);
   // The host mounts the password as a Docker secret rather than an environment value.
@@ -12,7 +11,12 @@ export async function connection(): Promise<SQL> {
     url.password = (
       await Bun.file(process.env.DATABASE_PASSWORD_FILE).text()
     ).trim();
-  pool = new SQL(url.toString(), {
+  return url.toString();
+}
+
+export async function connection(): Promise<SQL> {
+  if (pool) return pool;
+  pool = new SQL(await databaseUrl(), {
     max: 4,
     idleTimeout: 20,
     connectionTimeout: 10,

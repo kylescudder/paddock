@@ -1,4 +1,5 @@
-import { closeConnection, connection } from "../server/database.ts";
+import { databaseUrl } from "../server/database.ts";
+import { createDeploymentDatabase } from "./database.ts";
 
 // Read-only acceptance checks run by the host against the candidate container
 // before the release is acknowledged. They never write to the library.
@@ -17,8 +18,8 @@ const fail = (message: string): never => {
   throw new Error(message);
 };
 
+const sql = createDeploymentDatabase(await databaseUrl());
 try {
-  const sql = await connection();
   const [permissions] = await sql`
     SELECT current_user AS role,
       has_schema_privilege(current_user, 'public', 'CREATE') AS can_create,
@@ -117,5 +118,5 @@ try {
     "Frontend/assets, revision, library, image caching, SVG sandboxing, owner denial and runtime permissions passed",
   );
 } finally {
-  await closeConnection();
+  await sql.close();
 }
