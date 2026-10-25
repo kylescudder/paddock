@@ -35,7 +35,7 @@ jobs:
         run: |
           docker run --rm --network host \
             -e TEST_DATABASE_URL=postgres://paddock_test_owner@127.0.0.1:5432/paddock_test \
-            paddock:checks sh -c 'bun run format:check && bun run test'
+            paddock:checks sh -c 'bun run format:check && bun run test && bun run test:connections'
       - name: Verify deployment provenance, acceptance, backup and rollback gates
         run: python3 -B -m unittest discover -s deploy -p 'test_*.py' -v
       - name: Verify webhook authentication, acknowledgement and queue limits

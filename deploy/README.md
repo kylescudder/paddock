@@ -88,3 +88,17 @@ tail -n 100 state/deploy.log
 ```
 
 Host `deploy/` and Compose changes require updating the reviewed host checkout and recreating the receiver when relevant; routine app releases run only the independently verified image. Pause releases with `gh variable set DEPLOY_ENABLED --body false --repo kylescudder/paddock`.
+
+## Database connection budget
+
+The runtime role is limited to eight PostgreSQL connections. Application work
+uses at most four, health checks at most one, and deployment verification or
+database CLI work at most one. Sequential deployment commands use their own
+one-connection client instead of importing the application pool. This leaves
+two slots for operator connections during a release; owner migrations use a
+separate role. Paddock's current HTTP health check uses no database connection.
+
+CI exercises the real deployment client against an eight-connection test role,
+with all four application slots held open. Concurrent deployment queries must
+share one backend, health must still connect, two spare slots must remain usable,
+and a ninth connection must be rejected by PostgreSQL.

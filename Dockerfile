@@ -19,7 +19,7 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/server ./server
 COPY --from=build /app/shared ./shared
 COPY --from=build /app/assets ./assets
-COPY --from=build /app/deploy/verify.ts ./deploy/verify.ts
+COPY --from=build /app/deploy/verify.ts /app/deploy/database.ts ./deploy/
 # Cache official fonts in the image for offline startup; never serve font binaries publicly.
 COPY --from=build /app/data/fonts /app/runtime-fonts
 COPY deploy/entrypoint.sh /app/entrypoint.sh

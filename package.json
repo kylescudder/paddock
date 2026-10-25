@@ -15,7 +15,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test:e2e": "bunx --no-install playwright test --config e2e/playwright.config.ts",
-    "test:e2e:sign-in": "bunx --no-install playwright test --config e2e/sign-in.config.ts"
+    "test:e2e:sign-in": "bunx --no-install playwright test --config e2e/sign-in.config.ts",
+    "test:connections": "bun deploy/test-connection-budget.ts"
   },
   "engines": {
     "bun": ">=1.4.0"
