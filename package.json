@@ -34,7 +34,7 @@
     "drizzle-orm": "^0.45.4",
     "fontkit": "^2.0.4",
     "lucide-react": "^1.59.0",
-    "postgres": "^3.4.9",
+    "postgres": "^4.0.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "sharp": "^0.35.5",
