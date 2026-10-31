@@ -1,9 +1,9 @@
 // Frozen pre-Drizzle DDL from 6beb37088b81b8638b9c16dc0cfa63fb98694bf4.
 // Keep independent of the new schema and generated migrations.
-import type { SQL } from "bun";
+import type { Sql } from "postgres";
 
 // Idempotent, additive schema. Run by the owner role in `db:migrate` before the app starts.
-export async function migrate(sql: SQL) {
+export async function migrate(sql: Sql) {
   await sql`CREATE TABLE IF NOT EXISTS state (
     key TEXT PRIMARY KEY,
     value JSONB NOT NULL

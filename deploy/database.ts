@@ -1,7 +1,7 @@
-import { SQL } from "bun";
+import postgres from "postgres";
 
 // Runtime role budget: app 4 + health 1 + deployment 1, out of 8 connections.
 // Deployment checks are sequential and must not import the app's four-slot pool.
 export function createDeploymentDatabase(url: string) {
-  return new SQL(url, { max: 1, connectionTimeout: 10 });
+  return postgres(url, { max: 1, idle_timeout: 20, connect_timeout: 10 });
 }

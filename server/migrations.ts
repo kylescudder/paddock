@@ -1,4 +1,4 @@
-import { SQL } from "bun";
+import postgres, { type ReservedSql, type TransactionSql } from "postgres";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import path from "node:path";
 
@@ -10,7 +10,7 @@ const migrations = readMigrationFiles({
 // Compare catalog structure, never application rows. Build the frozen generated
 // baseline in a transaction-local reference schema, then discard it. This catches
 // partial schemas, types/nullability/defaults, keys, index order, RLS and triggers.
-async function structure(sql: SQL, schema: string) {
+async function structure(sql: ReservedSql | TransactionSql, schema: string) {
   return sql`SELECT c.relname AS name, c.relkind, c.relpersistence,
     c.relrowsecurity, c.relforcerowsecurity, c.relispartition,
     (SELECT count(*)::int FROM pg_inherits h WHERE h.inhrelid=c.oid OR h.inhparent=c.oid) AS inheritance,
@@ -32,8 +32,11 @@ async function structure(sql: SQL, schema: string) {
     WHERE n.nspname=${schema} AND c.relkind IN ('r','p','v','m','f') ORDER BY c.relname`;
 }
 
-async function adopt(sql: SQL) {
-  await sql.begin(async (tx) => {
+async function adopt(tx: ReservedSql) {
+  // A reserved Postgres.js client has no begin() at runtime. Explicit boundaries
+  // keep validation on the locked session; rollback discards reference DDL.
+  await tx`BEGIN`;
+  try {
     // No runtime USAGE on the journal schema, even if the host grants default
     // table privileges globally. Fresh installs and adoption share this boundary.
     await tx`CREATE SCHEMA IF NOT EXISTS drizzle`;
@@ -59,10 +62,16 @@ async function adopt(sql: SQL) {
           "Drizzle migration history differs from this release; refusing migration",
         );
     }
-    if (applied.length) return;
+    if (applied.length) {
+      await tx`COMMIT`;
+      return;
+    }
 
-    const existing = await structure(tx as unknown as SQL, "public");
-    if (!existing.length) return; // drizzle-kit applies the generated initial DDL.
+    const existing = await structure(tx, "public");
+    if (!existing.length) {
+      await tx`COMMIT`;
+      return; // drizzle-kit applies the generated initial DDL.
+    }
 
     // Unique name, quoted; the schema and its objects are removed before commit.
     const reference =
@@ -70,7 +79,7 @@ async function adopt(sql: SQL) {
     await tx.unsafe(`CREATE SCHEMA "${reference}"`);
     await tx.unsafe(`SET LOCAL search_path TO "${reference}", pg_catalog`);
     for (const statement of migrations[0]!.sql) await tx.unsafe(statement);
-    const expected = await structure(tx as unknown as SQL, reference);
+    const expected = await structure(tx, reference);
     if (JSON.stringify(existing) !== JSON.stringify(expected))
       throw new Error(
         "Existing schema is incompatible with the Paddock baseline; no adoption recorded",
@@ -84,13 +93,18 @@ async function adopt(sql: SQL) {
     )`;
     await tx`INSERT INTO drizzle.__drizzle_migrations (hash, created_at)
       VALUES (${migrations[0]!.hash}, ${migrations[0]!.folderMillis})`;
-  });
+    await tx`COMMIT`;
+  } catch (error) {
+    await tx`ROLLBACK`;
+    throw error;
+  }
 }
 
 export async function migrate(url: string) {
-  const pool = new SQL(url, { max: 1, connectionTimeout: 10 });
-  const sql = await pool.reserve();
+  const pool = postgres(url, { max: 1, idle_timeout: 20, connect_timeout: 10 });
+  let sql: ReservedSql | undefined;
   try {
+    sql = await pool.reserve();
     // Serialize owner migration commands, including the separate one-slot kit
     // client. The runtime role/pool is never involved.
     await sql`SELECT pg_advisory_lock(714203, 1)`;
@@ -134,7 +148,7 @@ export async function migrate(url: string) {
     }
   } finally {
     // Closing the reserved connection also releases the session advisory lock.
-    sql.release();
-    await pool.close();
+    sql?.release();
+    await pool.end();
   }
 }

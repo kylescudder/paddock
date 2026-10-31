@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { SQL } from "bun";
-import { drizzle } from "drizzle-orm/bun-sql";
+import type { Sql, TransactionSql } from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
 import { eq, sql as drizzleSql } from "drizzle-orm";
 import * as schema from "./schema.ts";
 import type {
@@ -32,7 +32,7 @@ export interface StoredDraft {
 }
 const iso = (value: Date | string | null) =>
   value === null ? null : new Date(value).toISOString();
-// Bun returns JSONB as text; both text and parsed values are accepted.
+// Accept parsed JSONB as well as JSON strings written by the legacy Bun client.
 const parse = <T>(value: unknown) =>
   (typeof value === "string" ? JSON.parse(value) : value) as T;
 const job = (row: Record<string, unknown>): Job => ({
@@ -59,9 +59,17 @@ const storedVersion = (row: Record<string, unknown>): StoredVersion => ({
 
 export class Store {
   readonly db;
-  constructor(public sql: SQL) {
-    // Wrap the existing pool, including transaction clients; no second pool.
-    this.db = drizzle({ client: sql, schema });
+  constructor(
+    private pool: Sql,
+    public sql: Sql | TransactionSql = pool,
+  ) {
+    // Postgres.js transaction clients share their pool's parsers/serializers but
+    // omit `options`. Drizzle needs those options to configure its date/JSON
+    // codecs. Attach the same options, never a new client or connection pool.
+    this.db = drizzle({
+      client: Object.assign(sql, { options: pool.options }) as Sql,
+      schema,
+    });
   }
   // Creating a Store marks work interrupted by a previous process as retryable.
   async open() {
@@ -78,8 +86,10 @@ export class Store {
     return row ? (row.value as T) : fallback;
   }
   async set(key: string, value: unknown) {
-    // SQL NULL and JSON null differ: retain the original JSONB encoding.
-    const json = drizzleSql`${JSON.stringify(value)}::jsonb`;
+    // Bun encoded the serialized value as a JSONB string. Keep that wire format:
+    // the previous image's Store.get parses strings once (including scalars).
+    // Drizzle also decodes this form, alongside ordinary JSONB objects/scalars.
+    const json = drizzleSql`${JSON.stringify(JSON.stringify(value))}::jsonb`;
     await this.db
       .insert(schema.state)
       .values({ key, value: json })
@@ -100,8 +110,10 @@ export class Store {
   async events(season?: number): Promise<RaceEvent[]> {
     const rows =
       season === undefined
-        ? await this.sql`SELECT payload FROM events`
-        : await this.sql`SELECT payload FROM events WHERE season=${season}`;
+        ? await this.sql<{ payload: unknown }[]>`SELECT payload FROM events`
+        : await this.sql<
+            { payload: unknown }[]
+          >`SELECT payload FROM events WHERE season=${season}`;
     return rows
       .map((row: { payload: unknown }) => parse<RaceEvent>(row.payload))
       .sort(
@@ -120,10 +132,15 @@ export class Store {
   }
   // Applies a whole season's changes atomically so a failure never leaves a half-updated calendar.
   async transaction<T>(work: (tx: Store) => Promise<T>): Promise<T> {
-    return this.sql.begin((tx) => work(new Store(tx as unknown as SQL)));
+    const run = (tx: TransactionSql) => work(new Store(this.pool, tx));
+    return (await ("begin" in this.sql
+      ? this.sql.begin(run)
+      : this.sql.savepoint(run))) as T;
   }
   async backgrounds(): Promise<Map<string, Background>> {
-    const rows = await this.sql`SELECT venue, file, version FROM backgrounds`;
+    const rows = await this.sql<
+      ({ venue: string } & Background)[]
+    >`SELECT venue, file, version FROM backgrounds`;
     return new Map(
       rows.map((row: { venue: string } & Background) => [row.venue, row]),
     );
@@ -150,7 +167,9 @@ export class Store {
       ON CONFLICT (venue) DO UPDATE SET file=excluded.file, version=excluded.version`;
   }
   async overlays(): Promise<Map<string, OverlayColours>> {
-    const rows = await this.sql`SELECT venue, colours FROM overlays`;
+    const rows = await this.sql<
+      { venue: string; colours: unknown }[]
+    >`SELECT venue, colours FROM overlays`;
     return new Map(
       rows.map((row: { venue: string; colours: unknown }) => [
         row.venue,
@@ -265,7 +284,7 @@ export class Store {
     now = new Date(),
   ): Promise<boolean> {
     const month = now.toISOString().slice(0, 7);
-    return this.sql.begin(async (tx) => {
+    return this.transaction(async ({ sql: tx }) => {
       // Serialises concurrent reservations so the monthly allowance can never be exceeded.
       await tx`SELECT pg_advisory_xact_lock(hashtext('paddock-attempts'))`;
       const [row] =
@@ -289,7 +308,10 @@ export class Store {
       error: row.error as string | null,
     }));
   }
-  async saveMapping(mapping: EmbyMapping, sql: SQL = this.sql) {
+  async saveMapping(
+    mapping: EmbyMapping,
+    sql: Sql | TransactionSql = this.sql,
+  ) {
     await sql`INSERT INTO mappings (event_id, session, item_id, item_name, last_image_version, last_synced_at, error)
       VALUES (${mapping.eventId}, ${mapping.session}, ${mapping.itemId}, ${mapping.itemName},
         ${mapping.lastImageVersion}, ${mapping.lastSyncedAt}, ${mapping.error})
@@ -302,9 +324,8 @@ export class Store {
   }
   // Remaps are saved together: either every row changes or none do.
   async replaceMappings(values: EmbyMapping[]) {
-    await this.sql.begin(async (tx) => {
-      for (const item of values)
-        await this.saveMapping(item, tx as unknown as SQL);
+    await this.transaction(async ({ sql: tx }) => {
+      for (const item of values) await this.saveMapping(item, tx);
     });
   }
 }

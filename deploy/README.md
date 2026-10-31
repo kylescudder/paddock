@@ -114,10 +114,24 @@ and a ninth connection must be rejected by PostgreSQL.
 This follows the existing house pattern: TypeScript Drizzle tables, committed
 `drizzle/` SQL/snapshots, `db:generate` and owner-only `db:migrate`, and a separate
 `drizzle.__drizzle_migrations` journal (as in Thursday Office Tracker and Wedding
-Picture Uploader). Paddock retains its Bun SQL pool and existing queries; Drizzle’s
-Bun SQL adapter wraps that same pool for state reads/writes. The extra Postgres.js
-driver is used only by drizzle-kit, never by the application. Drizzle-kit is a
+Picture Uploader). Application, owner wrapper and deployment clients all use
+Postgres.js (`postgres`); Drizzle's `postgres-js` adapter shares the application
+client for state reads/writes. Existing tagged/unsafe SQL stays in place. Bun runs
+installs, scripts, builds, generation and migration commands. Drizzle-kit is a
 production dependency because the existing owner one-shot uses the runtime image.
+
+The lazy application client is shared even by simultaneous first callers, with
+`max: 4`, `idle_timeout: 20` and `connect_timeout: 10` (seconds). The separate
+owner wrapper and deployment clients each use `max: 1` with the same timeouts.
+Drizzle-kit uses its own Postgres.js client capped at one connection. The reserved
+owner session holds its advisory lock across validation and the kit subprocess;
+validation uses explicit BEGIN/COMMIT/ROLLBACK on that session. Store transactions
+share the pool's Drizzle codecs and use Postgres.js transactions/savepoints, so
+raw queries and state writes commit or roll back together. JSONB object/string
+representations from the previous Bun client remain readable; timestamp outputs
+remain ISO strings. State writes retain Bun's JSONB string containing serialized
+JSON, so the previous image's scalar decoder can still read them on rollback.
+No schema/data conversion is needed for the driver change.
 
 `server/migrate.ts` remains the deployment/local entrypoint. It takes the existing
 `DATABASE_URL` and `DATABASE_PASSWORD_FILE`, reserves one owner connection for a
@@ -125,7 +139,11 @@ session advisory lock and validation, and runs `drizzle-kit migrate` through Bun
 with a separate one-connection owner client. Allow **two owner connections** for
 this command; it consumes no runtime slots. Do not overlap manual owner commands
 with a release. The four-slot application pool and eight-slot runtime role budget
-are unchanged.
+are unchanged. Two simultaneous wrapper commands would need a third owner slot
+just to wait for the lock while the active wrapper runs kit; with a two-slot owner
+limit, one may safely fail and require retry. Keep the existing host serialization.
+Pool limits apply per process: do not overlap full old/new app pools under an
+eight-slot runtime role or increase role limits to hide an overlap.
 
 On a fresh database, the wrapper restricts the journal schema then drizzle-kit
 applies `0000_baseline.sql`. On a legacy database with no journal entries, the

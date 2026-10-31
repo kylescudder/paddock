@@ -1,11 +1,11 @@
-import { test } from "bun:test";
+import { afterAll, test } from "bun:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { mkdtemp, cp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
-import { SQL } from "bun";
+import postgres from "postgres";
 import sharp from "sharp";
 import { migrate } from "../server/migrations.ts";
 import { Store } from "../server/db.ts";
@@ -40,8 +40,13 @@ const databaseUrl =
   "postgres://postgres:paddock@127.0.0.1:55432/paddock_test";
 if (!new URL(databaseUrl).pathname.endsWith("_test"))
   throw new Error("TEST_DATABASE_URL must name a database ending in _test");
-const sql = new SQL(databaseUrl, { max: 4 });
+const sql = postgres(databaseUrl, {
+  max: 4,
+  idle_timeout: 20,
+  connect_timeout: 10,
+});
 await migrate(databaseUrl);
+afterAll(() => sql.end());
 async function fixture() {
   await sql`TRUNCATE state, events, backgrounds, jobs, attempts, mappings, overlays, studio_versions, studio_drafts`;
   return {

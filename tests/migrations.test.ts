@@ -1,6 +1,7 @@
 import { afterAll, test } from "bun:test";
 import assert from "node:assert/strict";
-import { SQL } from "bun";
+import postgres from "postgres";
+import { SQL as LegacySQL } from "bun";
 import { migrate as legacyMigrate } from "./fixtures/legacy-schema.ts";
 import { Store } from "../server/db.ts";
 
@@ -15,8 +16,8 @@ if (
   throw new Error(
     "Migration tests require a disposable localhost database ending in _test",
   );
-const sql = new SQL(url, { max: 1 });
-afterAll(() => sql.close());
+const sql = postgres(url, { max: 1, idle_timeout: 20, connect_timeout: 10 });
+afterAll(() => sql.end());
 async function reset() {
   await sql`DROP SCHEMA IF EXISTS drizzle CASCADE`;
   await sql`DROP SCHEMA public CASCADE`;
@@ -66,8 +67,9 @@ test("adopts the legacy schema without touching rows, tables or old migration co
   await sql`INSERT INTO studio_versions VALUES ('candidate', 'monaco:2026', '/candidate.png', 'v2', 'generated', NULL, 'feedback', 'prompt', 'model', '2026-10-30T10:00:00Z')`;
   await sql`INSERT INTO studio_drafts VALUES ('monaco:2026', 'candidate', '{"title":"#ffffff"}', '2026-10-30T10:00:00Z')`;
   async function contents() {
-    const tables =
-      await sql`SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename`;
+    const tables = await sql<
+      { tablename: string }[]
+    >`SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename`;
     return Promise.all(
       tables.map(async ({ tablename }: { tablename: string }) => ({
         table: tablename,
@@ -146,7 +148,7 @@ test("non-superuser owner migrates while restricted runtime can use data but can
   await sql.unsafe(
     `CREATE ROLE ${runtime} LOGIN NOSUPERUSER CONNECTION LIMIT 8`,
   );
-  const client = new SQL(roleUrl(runtime), { max: 1 });
+  const client = postgres(roleUrl(runtime), { max: 1 });
   try {
     await sql.unsafe(`GRANT CONNECT, CREATE ON DATABASE "${db}" TO ${owner}`);
     await sql.unsafe(`GRANT CONNECT ON DATABASE "${db}" TO ${runtime}`);
@@ -165,11 +167,11 @@ test("non-superuser owner migrates while restricted runtime can use data but can
         await sql`DROP SCHEMA public CASCADE`;
         await sql.unsafe(`CREATE SCHEMA public AUTHORIZATION ${owner}`);
         await sql.unsafe(`GRANT USAGE ON SCHEMA public TO ${runtime}`);
-        const previous = new SQL(roleUrl(owner), { max: 1 });
+        const previous = postgres(roleUrl(owner), { max: 1 });
         try {
           await legacyMigrate(previous);
         } finally {
-          await previous.close();
+          await previous.end();
         }
       }
       const result = await migrate(roleUrl(owner));
@@ -190,7 +192,7 @@ test("non-superuser owner migrates while restricted runtime can use data but can
       assert.deepEqual(privileges, { usage: false, read: false, write: false });
     }
   } finally {
-    await client.close();
+    await client.end();
     await reset();
     await sql.unsafe(`DROP OWNED BY ${owner}`);
     await sql.unsafe(`DROP OWNED BY ${runtime}`);
@@ -221,7 +223,7 @@ test("reports failed initial DDL without allowing a partial fresh schema", async
   }
 }, 30000);
 
-test("Drizzle state queries preserve JSON scalars, null and transaction rollback on the shared Bun client", async () => {
+test("Drizzle state queries preserve JSON scalars, null and transaction rollback on the shared application client", async () => {
   await reset();
   const result = await migrate();
   assert.equal(result.code, 0, result.output);
@@ -244,4 +246,134 @@ test("Drizzle state queries preserve JSON scalars, null and transaction rollback
     }),
   );
   assert.deepEqual(await store.get("roundtrip", null), [1, "two"]);
+}, 30000);
+
+// The old driver is intentionally retained only at this compatibility boundary.
+test("legacy Bun JSONB and new Store writes interoperate without changing scalar encodings", async () => {
+  await reset();
+  assert.equal((await migrate()).code, 0);
+  const legacy = new LegacySQL(url, { max: 1 });
+  const store = new Store(sql);
+  try {
+    for (const value of [
+      null,
+      "calendar cached",
+      false,
+      42,
+      { season: 2026 },
+      [1, "two"],
+    ]) {
+      await legacy`INSERT INTO state (key, value) VALUES ('legacy', ${JSON.stringify(value)}::jsonb)
+        ON CONFLICT (key) DO UPDATE SET value=excluded.value`;
+      assert.deepEqual(await store.get("legacy", "missing"), value);
+      await store.set("legacy", value);
+      const [row] = await legacy`SELECT value FROM state WHERE key='legacy'`;
+      // Frozen main Store.get behavior, including its JSON string decoder.
+      assert.deepEqual(
+        typeof row.value === "string" ? JSON.parse(row.value) : row.value,
+        value,
+      );
+    }
+    const event = { id: "2026-monaco", season: 2026, round: 6 };
+    const colours = { title: "#ffffff" };
+    // Legacy Bun persisted both JSON objects and JSON strings containing objects.
+    const writers: ((
+      query: TemplateStringsArray,
+      ...parameters: string[]
+    ) => PromiseLike<unknown>)[] = [sql, legacy];
+    for (const writer of writers) {
+      await writer`INSERT INTO events VALUES (${event.id}, 2026, ${JSON.stringify(event)}::jsonb)
+        ON CONFLICT (id) DO UPDATE SET payload=excluded.payload`;
+      await writer`INSERT INTO overlays VALUES ('monaco:2026', ${JSON.stringify(colours)}::jsonb)
+        ON CONFLICT (venue) DO UPDATE SET colours=excluded.colours`;
+      await writer`INSERT INTO studio_drafts VALUES ('monaco:2026', NULL, ${JSON.stringify(colours)}::jsonb, '2026-10-31T12:30:00+02:00')
+        ON CONFLICT (venue) DO UPDATE SET colours=excluded.colours`;
+      assert.deepEqual(await store.event(event.id), event);
+      assert.deepEqual(await store.events(2026), [event]);
+      assert.deepEqual(await store.overlay("monaco:2026"), colours);
+      assert.deepEqual((await store.overlays()).get("monaco:2026"), colours);
+      assert.deepEqual(await store.studioDraft("monaco:2026"), {
+        selectedVersionId: null,
+        colours,
+        updatedAt: "2026-10-31T10:30:00.000Z",
+      });
+    }
+  } finally {
+    await legacy.close();
+  }
+}, 30000);
+
+test("shared raw and Drizzle transactions roll back together, including nested work", async () => {
+  await reset();
+  assert.equal((await migrate()).code, 0);
+  const store = new Store(sql);
+  const mapping = {
+    eventId: "2026-monaco",
+    session: "race" as const,
+    itemId: "episode",
+    itemName: "Monaco",
+    lastImageVersion: null,
+    lastSyncedAt: "2026-10-31T12:30:00+02:00",
+    error: null,
+  };
+  await store.saveMapping(mapping);
+  await assert.rejects(
+    store.transaction(async (tx) => {
+      await tx.set("atomic", { saved: true });
+      await tx.saveBackground("monaco:2026", "/rollback.png", "rollback");
+      await tx.transaction(async (nested) => {
+        await nested.set("nested", true);
+        await nested.saveMapping({ ...mapping, itemName: "rollback" });
+      });
+      throw new Error("cancel");
+    }),
+  );
+  assert.equal(await store.get("atomic", null), null);
+  assert.equal(await store.get("nested", null), null);
+  assert.equal(await store.background("monaco:2026"), undefined);
+  assert.deepEqual(await store.mappings(), [
+    { ...mapping, lastSyncedAt: "2026-10-31T10:30:00.000Z" },
+  ]);
+  // A uniqueness failure partway through a remap cannot save the first row.
+  await assert.rejects(
+    store.replaceMappings([
+      { ...mapping, itemName: "partial" },
+      { ...mapping, eventId: "2026-silverstone" },
+    ]),
+  );
+  assert.equal((await store.mappings())[0]!.itemName, "Monaco");
+  await store.transaction(async (tx) => {
+    await tx.set("atomic", true);
+    await tx.saveBackground("monaco:2026", "/committed.png", "committed");
+  });
+  assert.equal(await store.get("atomic", false), true);
+  assert.equal((await store.background("monaco:2026"))?.version, "committed");
+}, 30000);
+
+test("reopening the Store recovers interrupted jobs and keeps timestamp/null behavior", async () => {
+  await reset();
+  assert.equal((await migrate()).code, 0);
+  const store = new Store(sql);
+  const queued = await store.createJob("sync", null, "queued");
+  const running = await store.createJob("generate", "2026-monaco", "queued");
+  const completed = await store.createJob("emby", null, "queued");
+  await store.updateJob(running.id, "running", "working");
+  await store.updateJob(completed.id, "completed", "done");
+  assert.equal(
+    (await store.latestJob("generate", "2026-monaco"))?.finishedAt,
+    null,
+  );
+  const reopened = await new Store(sql).open();
+  const jobs = await reopened.jobs();
+  for (const id of [queued.id, running.id]) {
+    const recovered = jobs.find((job) => job.id === id)!;
+    assert.equal(recovered.status, "failed");
+    assert.equal(recovered.message, "Interrupted by a restart. You can retry.");
+    assert.ok(Number.isFinite(Date.parse(recovered.finishedAt!)));
+  }
+  const done = jobs.find((job) => job.id === completed.id)!;
+  assert.equal(done.status, "completed");
+  assert.equal(done.message, "done");
+  assert.equal(done.createdAt, completed.createdAt);
+  assert.ok(Number.isFinite(Date.parse(done.finishedAt!)));
 }, 30000);

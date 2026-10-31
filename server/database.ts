@@ -1,7 +1,7 @@
-import { SQL } from "bun";
+import postgres, { type Sql } from "postgres";
 
 // Created lazily so importing server code never needs a database (e.g. in the router).
-let pool: SQL | undefined;
+let pool: Promise<Sql> | undefined;
 
 export async function databaseUrl(): Promise<string> {
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
@@ -14,17 +14,21 @@ export async function databaseUrl(): Promise<string> {
   return url.toString();
 }
 
-export async function connection(): Promise<SQL> {
-  if (pool) return pool;
-  pool = new SQL(await databaseUrl(), {
-    max: 4,
-    idleTimeout: 20,
-    connectionTimeout: 10,
-  });
+export function connection(): Promise<Sql> {
+  // Cache initialization before reading the secret file so simultaneous first
+  // callers cannot create independent four-slot pools. A failed read can retry.
+  pool ??= databaseUrl()
+    .then((url) =>
+      postgres(url, { max: 4, idle_timeout: 20, connect_timeout: 10 }),
+    )
+    .catch((error) => {
+      pool = undefined;
+      throw error;
+    });
   return pool;
 }
 export async function closeConnection() {
   const current = pool;
   pool = undefined;
-  await current?.close();
+  await (await current)?.end();
 }

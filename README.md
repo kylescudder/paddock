@@ -15,7 +15,7 @@ A calendar-aware Formula 1 artwork library for **paddock.thescudders.org**, self
 
 ## Local development
 
-Built with **TanStack Start** (React, TypeScript, Router and Query) on **Bun**, with **PostgreSQL** and **Clerk**. Requires Bun **1.4+**, Docker for a local database, and Python 3 only for optional archive reimport.
+Built with **TanStack Start** (React, TypeScript, Router and Query) on **Bun**, with **PostgreSQL**, **Postgres.js/Drizzle** and **Clerk**. Requires Bun **1.4+**, Docker for a local database, and Python 3 only for optional archive reimport.
 
 ```sh
 bun install
@@ -33,6 +33,8 @@ SQL and snapshots in `drizzle/`; commit those with the schema and `bun.lock`.
 `bun run db:check` checks migration history files. Run `bun run db:migrate` with
 owner credentials before starting the app; it safely adopts a compatible existing
 schema or applies generated migrations through drizzle-kit on a fresh database.
+Raw SQL and Drizzle share one Postgres.js application client (max 4, idle 20s,
+connect 10s); owner and deployment clients are separately bounded.
 Do not use `drizzle-kit push` or bypass the wrapper for adoption. See
 [deployment migration notes](deploy/README.md#drizzle-adoption-and-rollout) for
 privileges, backups, compatibility checks and rollback.

@@ -1,6 +1,6 @@
 import path from "node:path";
 import { cp, mkdir } from "node:fs/promises";
-import { SQL } from "bun";
+import postgres from "postgres";
 import { mergeConfig, defineConfig } from "vite";
 import base from "../vite.config.ts";
 import { migrate } from "../server/migrations.ts";
@@ -23,7 +23,11 @@ const databaseUrl =
   "postgres://postgres:paddock@127.0.0.1:55432/paddock_e2e_test";
 if (!new URL(databaseUrl).pathname.endsWith("_e2e_test"))
   throw new Error("E2E_DATABASE_URL must end in _e2e_test");
-const sql = new SQL(databaseUrl);
+const sql = postgres(databaseUrl, {
+  max: 4,
+  idle_timeout: 20,
+  connect_timeout: 10,
+});
 await migrate(databaseUrl);
 await sql`TRUNCATE state, events, backgrounds, jobs, attempts, mappings, overlays, studio_versions, studio_drafts`;
 const store = await new Store(sql).open();
