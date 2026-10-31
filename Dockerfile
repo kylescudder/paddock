@@ -17,6 +17,8 @@ COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --production --network-concurrency 8
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/server ./server
+COPY --from=build /app/drizzle ./drizzle
+COPY --from=build /app/drizzle.config.ts ./drizzle.config.ts
 COPY --from=build /app/shared ./shared
 COPY --from=build /app/assets ./assets
 COPY --from=build /app/deploy/verify.ts /app/deploy/database.ts ./deploy/

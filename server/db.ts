@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { SQL } from "bun";
+import { drizzle } from "drizzle-orm/bun-sql";
+import { eq, sql as drizzleSql } from "drizzle-orm";
+import * as schema from "./schema.ts";
 import type {
   AppSettings,
   EmbyMapping,
@@ -55,7 +58,11 @@ const storedVersion = (row: Record<string, unknown>): StoredVersion => ({
 });
 
 export class Store {
-  constructor(public sql: SQL) {}
+  readonly db;
+  constructor(public sql: SQL) {
+    // Wrap the existing pool, including transaction clients; no second pool.
+    this.db = drizzle({ client: sql, schema });
+  }
   // Creating a Store marks work interrupted by a previous process as retryable.
   async open() {
     await this.sql`UPDATE jobs SET status='failed',
@@ -64,13 +71,19 @@ export class Store {
     return this;
   }
   async get<T>(key: string, fallback: T): Promise<T> {
-    const [row] = await this.sql`SELECT value FROM state WHERE key=${key}`;
-    return row ? parse<T>(row.value) : fallback;
+    const [row] = await this.db
+      .select({ value: schema.state.value })
+      .from(schema.state)
+      .where(eq(schema.state.key, key));
+    return row ? (row.value as T) : fallback;
   }
   async set(key: string, value: unknown) {
-    await this
-      .sql`INSERT INTO state (key, value) VALUES (${key}, ${JSON.stringify(value)}::jsonb)
-      ON CONFLICT (key) DO UPDATE SET value=excluded.value`;
+    // SQL NULL and JSON null differ: retain the original JSONB encoding.
+    const json = drizzleSql`${JSON.stringify(value)}::jsonb`;
+    await this.db
+      .insert(schema.state)
+      .values({ key, value: json })
+      .onConflictDoUpdate({ target: schema.state.key, set: { value: json } });
   }
   async settings(): Promise<AppSettings> {
     return {

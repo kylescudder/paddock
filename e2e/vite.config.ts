@@ -3,7 +3,7 @@ import { cp, mkdir } from "node:fs/promises";
 import { SQL } from "bun";
 import { mergeConfig, defineConfig } from "vite";
 import base from "../vite.config.ts";
-import { migrate } from "../server/schema.ts";
+import { migrate } from "../server/migrations.ts";
 import { Store } from "../server/db.ts";
 import { seedCalendars } from "../server/calendar.ts";
 import { Artwork } from "../server/artwork.ts";
@@ -24,7 +24,7 @@ const databaseUrl =
 if (!new URL(databaseUrl).pathname.endsWith("_e2e_test"))
   throw new Error("E2E_DATABASE_URL must end in _e2e_test");
 const sql = new SQL(databaseUrl);
-await migrate(sql);
+await migrate(databaseUrl);
 await sql`TRUNCATE state, events, backgrounds, jobs, attempts, mappings, overlays, studio_versions, studio_drafts`;
 const store = await new Store(sql).open();
 await seedCalendars(store, process.cwd());

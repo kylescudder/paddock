@@ -16,7 +16,9 @@
     "format:check": "prettier --check .",
     "test:e2e": "bunx --no-install playwright test --config e2e/playwright.config.ts",
     "test:e2e:sign-in": "bunx --no-install playwright test --config e2e/sign-in.config.ts",
-    "test:connections": "bun deploy/test-connection-budget.ts"
+    "test:connections": "bun deploy/test-connection-budget.ts",
+    "db:generate": "bun --bun drizzle-kit generate",
+    "db:check": "bun --bun drizzle-kit check"
   },
   "engines": {
     "bun": ">=1.4.0"
@@ -28,8 +30,11 @@
     "@tanstack/react-router": "^1.170.45",
     "@tanstack/react-router-ssr-query": "^1.167.3",
     "@tanstack/react-start": "^1.169.3",
+    "drizzle-kit": "^0.31.11",
+    "drizzle-orm": "^0.45.4",
     "fontkit": "^2.0.4",
     "lucide-react": "^1.59.0",
+    "postgres": "^3.4.9",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "sharp": "^0.35.5",

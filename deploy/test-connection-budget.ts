@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { createDeploymentDatabase } from "./database";
 import { SQL } from "bun";
+import { connection, closeConnection } from "../server/database";
+import { Store } from "../server/db";
+import { sql as drizzleSql } from "drizzle-orm";
 function connect(url: string, max: number) {
   return adapt(new SQL(url, { max, connectionTimeout: 3 }));
 }
@@ -47,6 +50,8 @@ async function checkBudget() {
   const pools: Client[] = [];
   const held: Reservation[] = [];
   let created = false;
+  const previousUrl = process.env.DATABASE_URL;
+  const previousPasswordFile = process.env.DATABASE_PASSWORD_FILE;
   try {
     await admin.query(
       `CREATE ROLE "${role}" LOGIN NOSUPERUSER CONNECTION LIMIT 8`,
@@ -58,12 +63,19 @@ async function checkBudget() {
     const url = new URL(controlUrl);
     url.username = role;
     url.password = "";
-    const app = connect(url.toString(), 4);
+    process.env.DATABASE_URL = url.toString();
+    delete process.env.DATABASE_PASSWORD_FILE;
+    const appPool = await connection();
+    const app = adapt(appPool);
+    pools.push(app);
+    // Warm the actual Drizzle adapter before reserving every app slot. A second
+    // ORM pool would consume a ninth slot below and violate the role budget.
+    await new Store(appPool).db.execute(drizzleSql`SELECT 1`);
     const deployment = adapt(createDeploymentDatabase(url.toString()));
     const health = connect(url.toString(), 1);
     const spare = connect(url.toString(), 2);
     const overflow = connect(url.toString(), 1);
-    pools.push(app, deployment, health, spare, overflow);
+    pools.push(deployment, health, spare, overflow);
     // Hold every application slot, rather than relying on a quiet test pool.
     for (let i = 0; i < 4; i++) {
       const connection = await app.reserve();
@@ -106,6 +118,11 @@ async function checkBudget() {
       await admin.query(`DROP OWNED BY "${role}"`);
       await admin.query(`DROP ROLE "${role}"`);
     }
+    await closeConnection();
+    process.env.DATABASE_URL = previousUrl;
+    if (previousUrl === undefined) delete process.env.DATABASE_URL;
+    if (previousPasswordFile !== undefined)
+      process.env.DATABASE_PASSWORD_FILE = previousPasswordFile;
     await admin.close();
   }
 }

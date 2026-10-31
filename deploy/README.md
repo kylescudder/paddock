@@ -4,8 +4,9 @@
 
 This app is registered as `paddock` in the central deployment registry
 `/Users/kyle/platform/deploy-core/apps.json`. LaunchAgent
-`com.kylescudder.deploy-core` runs the single installed engine. Application hooks
-are `deploy/hooks.py`; the receiver, credentials, queues,
+`com.kylescudder.deploy-core` runs the single installed engine. Installed application hooks ship in deploy-core at `app_hooks/paddock/hooks.py`
+(`installed_hooks: true`); this repo’s `deploy/hooks.py` is the reference command
+contract. The receiver, credentials, queues,
 state and database contracts below remain app-specific. Manual deployment uses
 `./deploy/host-deploy.sh sha256:<digest>`.
 
@@ -22,7 +23,12 @@ This follows the current Thursday Office Tracker deployment on the host: GitHub-
 
 ## Deployer
 
-Application-specific behavior is in `hooks.py`; deployment definitions are central.
+Application-specific behavior is packaged in the immutable deploy-core service
+release. The authoritative source is
+[`app_hooks/paddock/hooks.py`](https://github.com/kylescudder/deploy-core/blob/main/app_hooks/paddock/hooks.py),
+with its source provenance in `config/tooling-sources.json`. The installed copy is
+`/Users/kyle/platform/deploy-core/current/app_hooks/paddock/hooks.py`. Updating
+this app’s reference `deploy/hooks.py` alone does not change the installed hook.
 
 ## Host setup
 
@@ -102,3 +108,68 @@ CI exercises the real deployment client against an eight-connection test role,
 with all four application slots held open. Concurrent deployment queries must
 share one backend, health must still connect, two spare slots must remain usable,
 and a ninth connection must be rejected by PostgreSQL.
+
+## Drizzle adoption and rollout
+
+This follows the existing house pattern: TypeScript Drizzle tables, committed
+`drizzle/` SQL/snapshots, `db:generate` and owner-only `db:migrate`, and a separate
+`drizzle.__drizzle_migrations` journal (as in Thursday Office Tracker and Wedding
+Picture Uploader). Paddock retains its Bun SQL pool and existing queries; Drizzle’s
+Bun SQL adapter wraps that same pool for state reads/writes. The extra Postgres.js
+driver is used only by drizzle-kit, never by the application. Drizzle-kit is a
+production dependency because the existing owner one-shot uses the runtime image.
+
+`server/migrate.ts` remains the deployment/local entrypoint. It takes the existing
+`DATABASE_URL` and `DATABASE_PASSWORD_FILE`, reserves one owner connection for a
+session advisory lock and validation, and runs `drizzle-kit migrate` through Bun
+with a separate one-connection owner client. Allow **two owner connections** for
+this command; it consumes no runtime slots. Do not overlap manual owner commands
+with a release. The four-slot application pool and eight-slot runtime role budget
+are unchanged.
+
+On a fresh database, the wrapper restricts the journal schema then drizzle-kit
+applies `0000_baseline.sql`. On a legacy database with no journal entries, the
+wrapper compares public tables with a disposable reference schema built from that
+frozen baseline inside a transaction. It checks table kind/persistence, columns,
+types, nullability/defaults, keys, indexes (including descending/null ordering),
+RLS, triggers and rules. The reference schema is removed before commit; no
+application rows are read or changed, and initial DDL is never rerun on live tables.
+An exact match records only the baseline hash/timestamp; partial or incompatible
+schemas abort without recording adoption. Investigate any mismatch rather than
+forcing a baseline or editing an applied migration. Existing history must match
+the release’s committed migration prefix. Repeated runs are safe.
+
+The journal schema, tables and sequences are restricted to the owner: PUBLIC and
+the existing `<database>_runtime` role receive no access, even with broad default
+table grants. Keep owner credentials out of the app. The migration does not alter
+application grants or create roles/databases; host provisioning remains responsible
+for the existing owner/runtime separation and public-table default privileges.
+
+Before the first release:
+
+1. Review the generated baseline and adoption tests, and confirm the installed
+   deploy-core Paddock hook still uses the command below. No hook change is needed
+   for this PR: read-only filesystem, user `501:20`, 128 MiB, 0.5 CPU, owner secret
+   mount, 120-second timeout, and backup-before-migrate all remain the same.
+2. Verify the existing owner has at least two available connections and the
+   runtime role has no inherited owner privileges. Preserve the private backup
+   gate and current image until owner migration completes.
+3. Rehearse on a protected restore of the existing database, then release through
+   the normal attested-image workflow. Local verification here uses synthetic
+   data only; no production restore or host change was performed.
+
+The coordinated host command remains:
+
+```sh
+# Run by the installed hook, after backup, with the existing owner secret mount:
+# --entrypoint bun <candidate-image> /app/server/migrate.ts
+```
+
+Rollback restores the prior attested image through deploy-core. This PR changes no
+application tables or data; the previous Bun SQL runtime and handwritten additive
+migration remain compatible and ignore the private Drizzle journal. Leave the
+journal in place on rollback. A failed validation/migration leaves the current app
+running; do not drop application tables or restore a database just to undo this
+foundation. Future migrations must remain additive and compatible with the prior
+image. Do not run an older Drizzle release’s migrator against a newer migration
+history: the prefix check deliberately refuses unknown history.

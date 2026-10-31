@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { SQL } from "bun";
 import sharp from "sharp";
-import { migrate } from "../server/schema.ts";
+import { migrate } from "../server/migrations.ts";
 import { Store } from "../server/db.ts";
 import { seedCalendars } from "../server/calendar.ts";
 import { Artwork } from "../server/artwork.ts";
@@ -29,7 +29,7 @@ const databaseUrl =
 if (!new URL(databaseUrl).pathname.endsWith("_test"))
   throw new Error("TEST_DATABASE_URL must name a database ending in _test");
 const sql = new SQL(databaseUrl, { max: 4 });
-await migrate(sql);
+await migrate(databaseUrl);
 
 const appUrl = "https://paddock.thescudders.org";
 const model: ImageModel = {

@@ -21,6 +21,7 @@
     "scripts/*.ts",
     "tests",
     "vite.config.ts",
+    "drizzle.config.ts",
     "e2e"
   ]
 }
