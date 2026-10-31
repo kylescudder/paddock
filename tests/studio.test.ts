@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { cp, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { SQL } from "bun";
+import postgres from "postgres";
 import sharp from "sharp";
-import { migrate } from "../server/schema.ts";
+import { migrate } from "../server/migrations.ts";
 import { Store } from "../server/db.ts";
 import { seedCalendars } from "../server/calendar.ts";
 import { Artwork } from "../server/artwork.ts";
@@ -28,8 +28,12 @@ const databaseUrl =
   "postgres://postgres:paddock@127.0.0.1:55432/paddock_test";
 if (!new URL(databaseUrl).pathname.endsWith("_test"))
   throw new Error("TEST_DATABASE_URL must name a database ending in _test");
-const sql = new SQL(databaseUrl, { max: 4 });
-await migrate(sql);
+const sql = postgres(databaseUrl, {
+  max: 4,
+  idle_timeout: 20,
+  connect_timeout: 10,
+});
+await migrate(databaseUrl);
 
 const appUrl = "https://paddock.thescudders.org";
 const model: ImageModel = {
@@ -123,6 +127,7 @@ beforeEach(async () => {
 afterAll(async () => {
   guardOverrides.current = undefined;
   useServices(undefined);
+  await sql.end();
   if (dataDir) await rm(dataDir, { recursive: true, force: true });
 });
 
@@ -374,4 +379,37 @@ test("default colours and discarded drafts leave renders untouched, and invalid 
   await store.saveEvent(archived);
   const refused = await call(studio.generate, archived.id, "POST", {});
   assert.equal(refused.status, 400);
+});
+
+test("scheduler persists its due sync and respects the saved six-hour interval after restart", async () => {
+  // Frozen calendars avoid provider traffic; sync still runs through the real
+  // queue, Store and Emby-disabled boundary, persisting its scheduling state.
+  const year = new Date().getUTCFullYear();
+  for (const season of new Set([2025, 2026, year, year + 1]))
+    await store.set(`frozen:${season}`, true);
+  const waitForTick = async () => {
+    for (let attempt = 0; attempt < 200; attempt++) {
+      const rows = await store.jobs();
+      if (rows.some((job) => job.kind === "sync" && job.status === "completed"))
+        return rows;
+      await Bun.sleep(25);
+    }
+    throw new Error("Scheduled sync did not complete");
+  };
+  try {
+    jobs.start();
+    const synced = await waitForTick();
+    jobs.stop();
+    const lastSync = await store.get("lastSync", "");
+    assert.ok(Number.isFinite(Date.parse(lastSync)));
+    assert.equal(await store.get("syncError", "missing"), null);
+    assert.ok(await store.get("lastSyncAttempt", ""));
+    jobs.start();
+    await Bun.sleep(100);
+    assert.equal(await store.get("lastSync", ""), lastSync);
+    assert.deepEqual(await store.jobs(), synced);
+    assert.equal(sent.length, 0);
+  } finally {
+    jobs.stop();
+  }
 });

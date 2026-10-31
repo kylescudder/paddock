@@ -1,9 +1,5 @@
-import { closeConnection, connection } from "./database.ts";
-import { migrate } from "./schema.ts";
+import { databaseUrl } from "./database.ts";
+import { migrate } from "./migrations.ts";
 
-try {
-  await migrate(await connection());
-  console.log("Paddock schema is ready");
-} finally {
-  await closeConnection();
-}
+await migrate(await databaseUrl());
+console.log("Paddock schema is ready (drizzle-kit)");

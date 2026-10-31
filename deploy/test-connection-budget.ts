@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { createDeploymentDatabase } from "./database";
-import { SQL } from "bun";
+import postgres, { type Sql } from "postgres";
+import { connection, closeConnection } from "../server/database";
+import { Store } from "../server/db";
+import { sql as drizzleSql } from "drizzle-orm";
 function connect(url: string, max: number) {
-  return adapt(new SQL(url, { max, connectionTimeout: 3 }));
+  return adapt(postgres(url, { max, idle_timeout: 20, connect_timeout: 10 }));
 }
-function adapt(pool: SQL): Client {
+function adapt(pool: Sql): Client {
   return {
     query: async (text) => pool.unsafe(text),
     reserve: async () => {
@@ -18,7 +21,7 @@ function adapt(pool: SQL): Client {
       };
     },
     close: async () => {
-      await pool.close({ timeout: 1 });
+      await pool.end({ timeout: 1 });
     },
   };
 }
@@ -47,6 +50,8 @@ async function checkBudget() {
   const pools: Client[] = [];
   const held: Reservation[] = [];
   let created = false;
+  const previousUrl = process.env.DATABASE_URL;
+  const previousPasswordFile = process.env.DATABASE_PASSWORD_FILE;
   try {
     await admin.query(
       `CREATE ROLE "${role}" LOGIN NOSUPERUSER CONNECTION LIMIT 8`,
@@ -58,12 +63,31 @@ async function checkBudget() {
     const url = new URL(controlUrl);
     url.username = role;
     url.password = "";
-    const app = connect(url.toString(), 4);
-    const deployment = adapt(createDeploymentDatabase(url.toString()));
+    process.env.DATABASE_URL = url.toString();
+    delete process.env.DATABASE_PASSWORD_FILE;
+    const clients = await Promise.all(Array.from({ length: 16 }, connection));
+    assert.equal(new Set(clients).size, 1);
+    const appPool = clients[0]!;
+    const app = adapt(appPool);
+    pools.push(app);
+    // Warm the actual Drizzle adapter before reserving every app slot. A second
+    // ORM pool would consume a ninth slot below and violate the role budget.
+    await new Store(appPool).db.execute(drizzleSql`SELECT 1`);
+    const deploymentPool = createDeploymentDatabase(url.toString());
+    assert.equal(deploymentPool.options.max, 1);
+    assert.equal(deploymentPool.options.idle_timeout, 20);
+    assert.equal(deploymentPool.options.connect_timeout, 10);
+    const deployment = adapt(deploymentPool);
+    const concurrent = await Promise.all(
+      Array.from({ length: 16 }, () =>
+        app.query("SELECT pg_backend_pid() AS pid, pg_sleep(0.05)"),
+      ),
+    );
+    assert.equal(new Set(concurrent.map(([row]) => row!.pid)).size, 4);
     const health = connect(url.toString(), 1);
     const spare = connect(url.toString(), 2);
     const overflow = connect(url.toString(), 1);
-    pools.push(app, deployment, health, spare, overflow);
+    pools.push(deployment, health, spare, overflow);
     // Hold every application slot, rather than relying on a quiet test pool.
     for (let i = 0; i < 4; i++) {
       const connection = await app.reserve();
@@ -106,6 +130,11 @@ async function checkBudget() {
       await admin.query(`DROP OWNED BY "${role}"`);
       await admin.query(`DROP ROLE "${role}"`);
     }
+    await closeConnection();
+    process.env.DATABASE_URL = previousUrl;
+    if (previousUrl === undefined) delete process.env.DATABASE_URL;
+    if (previousPasswordFile !== undefined)
+      process.env.DATABASE_PASSWORD_FILE = previousPasswordFile;
     await admin.close();
   }
 }

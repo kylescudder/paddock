@@ -118,5 +118,5 @@ try {
     "Frontend/assets, revision, library, image caching, SVG sandboxing, owner denial and runtime permissions passed",
   );
 } finally {
-  await sql.close();
+  await sql.end();
 }

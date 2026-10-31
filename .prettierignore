@@ -6,3 +6,6 @@ assets
 bun.lock
 deploy/release
 *.md
+
+# Generated drizzle-kit metadata
+drizzle/meta/

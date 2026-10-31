@@ -12,3 +12,4 @@ deploy-spool
 __pycache__
 *.log
 .DS_Store
+.local
