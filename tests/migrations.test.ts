@@ -4,6 +4,10 @@ import postgres from "postgres";
 import { SQL as LegacySQL } from "bun";
 import { migrate as legacyMigrate } from "./fixtures/legacy-schema.ts";
 import { Store } from "../server/db.ts";
+import journal from "../drizzle/meta/_journal.json";
+
+// Every committed migration is recorded once (baseline, then additive changes).
+const migrationCount = journal.entries.length;
 
 const url =
   process.env.TEST_DATABASE_URL ||
@@ -50,7 +54,7 @@ test("fresh database migrates once and retains settings on repeat", async () => 
   });
   const [row] =
     await sql`SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations`;
-  assert.equal(row.count, 1);
+  assert.equal(row.count, migrationCount);
 }, 30000);
 
 // Independent copy of the pre-Drizzle DDL at audited main, not generated SQL.
@@ -67,9 +71,11 @@ test("adopts the legacy schema without touching rows, tables or old migration co
   await sql`INSERT INTO studio_versions VALUES ('candidate', 'monaco:2026', '/candidate.png', 'v2', 'generated', NULL, 'feedback', 'prompt', 'model', '2026-10-30T10:00:00Z')`;
   await sql`INSERT INTO studio_drafts VALUES ('monaco:2026', 'candidate', '{"title":"#ffffff"}', '2026-10-30T10:00:00Z')`;
   async function contents() {
+    // Later additive migrations (Better Auth's auth_* tables) are new tables;
+    // every legacy table, row and identity must be untouched.
     const tables = await sql<
       { tablename: string }[]
-    >`SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename`;
+    >`SELECT tablename FROM pg_tables WHERE schemaname='public' AND left(tablename, 5) <> 'auth_' ORDER BY tablename`;
     return Promise.all(
       tables.map(async ({ tablename }: { tablename: string }) => ({
         table: tablename,
@@ -83,6 +89,9 @@ test("adopts the legacy schema without touching rows, tables or old migration co
   const result = await migrate();
   assert.equal(result.code, 0, result.output);
   assert.deepEqual(await contents(), before);
+  const [auth] =
+    await sql`SELECT count(*)::int AS count FROM pg_tables WHERE schemaname='public' AND left(tablename, 5) = 'auth_'`;
+  assert.equal(auth.count, 7);
   assert.equal((await new Store(sql).settings()).monthlyGenerationLimit, 9);
   // A previous image may still run its idempotent migration during rollback.
   await legacyMigrate(sql);
@@ -129,7 +138,7 @@ test("rejects unknown migration history and serializes concurrent migration comm
   assert.match(result.output, /history differs/);
   const [row] =
     await sql`SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations`;
-  assert.equal(row.count, 1);
+  assert.equal(row.count, migrationCount);
 }, 30000);
 
 test("non-superuser owner migrates while restricted runtime can use data but cannot access metadata or migrate", async () => {

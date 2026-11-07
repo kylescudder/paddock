@@ -1,0 +1,112 @@
+/*
+  Better Auth UI (shadcn, radix-nova) styles for the Better Auth provider only.
+  Loaded only when AUTH_PROVIDER=better-auth. Scoped so the rest of Paddock is
+  unaffected: no Tailwind preflight, utilities are generated only from the auth
+  components, and the shadcn tokens use a `--ba-` prefix because Paddock's own
+  stylesheet already defines `--border` and `--muted`. Utilities are unlayered
+  so they win over Paddock's element defaults (e.g. `button { background }`).
+*/
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" source(none);
+@import "tw-animate-css";
+
+@source "./components/auth";
+@source "./components/ui";
+@source "./components/BetterAuthUserMenu.tsx";
+@source "./routes/auth.$path.tsx";
+@source "./routes/profile.tsx";
+
+/* Paddock is a dark interface, so shadcn's dark variants always apply. */
+@custom-variant dark (&:is(*));
+
+@theme inline {
+  --font-sans: "DM Sans", sans-serif;
+  --font-heading: "Space Grotesk", sans-serif;
+  --color-background: var(--ba-background);
+  --color-foreground: var(--ba-foreground);
+  --color-card: var(--ba-card);
+  --color-card-foreground: var(--ba-card-foreground);
+  --color-popover: var(--ba-popover);
+  --color-popover-foreground: var(--ba-popover-foreground);
+  --color-primary: var(--ba-primary);
+  --color-primary-foreground: var(--ba-primary-foreground);
+  --color-secondary: var(--ba-secondary);
+  --color-secondary-foreground: var(--ba-secondary-foreground);
+  --color-muted: var(--ba-muted);
+  --color-muted-foreground: var(--ba-muted-foreground);
+  --color-accent: var(--ba-accent);
+  --color-accent-foreground: var(--ba-accent-foreground);
+  --color-destructive: var(--ba-destructive);
+  --color-border: var(--ba-border);
+  --color-input: var(--ba-input);
+  --color-ring: var(--ba-ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --animate-caret-blink: caret-blink 1.25s ease-out infinite;
+  @keyframes caret-blink {
+    0%,
+    70%,
+    100% {
+      opacity: 1;
+    }
+    20%,
+    50% {
+      opacity: 0;
+    }
+  }
+}
+
+/* Paddock's palette: pit-wall surfaces with its racing-red accent. */
+:root {
+  --radius: 0.5rem;
+  --ba-background: #101111;
+  --ba-foreground: #edece7;
+  --ba-card: #171a18;
+  --ba-card-foreground: #edece7;
+  --ba-popover: #171a18;
+  --ba-popover-foreground: #edece7;
+  --ba-primary: #f45540;
+  --ba-primary-foreground: #101111;
+  --ba-secondary: #222623;
+  --ba-secondary-foreground: #edece7;
+  --ba-muted: #1d201e;
+  --ba-muted-foreground: #a8b0a5;
+  --ba-accent: #232724;
+  --ba-accent-foreground: #edece7;
+  --ba-destructive: #ff8b7c;
+  --ba-border: #292d2a;
+  --ba-input: #343935;
+  --ba-ring: #f45540;
+}
+
+/*
+  A minimal, scoped stand-in for Tailwind's preflight: auth pages are wrapped in
+  `.paddock-auth`, and shadcn portals (menus, dialogs) carry `data-slot`.
+  `:where()` keeps specificity at zero so every utility still applies.
+*/
+:where(.paddock-auth, [data-slot]),
+:where(.paddock-auth, [data-slot]) :where(*, ::before, ::after) {
+  border: 0 solid;
+  border-color: var(--ba-border);
+  margin: 0;
+  padding: 0;
+}
+:where(.paddock-auth, [data-slot])
+  :where(input, textarea, select, button, label) {
+  font: inherit;
+  color: inherit;
+  background-color: transparent;
+}
+:where(.paddock-auth, [data-slot]) :where(ul, ol) {
+  list-style: none;
+}
+:where(.paddock-auth, [data-slot]) :where(svg, img) {
+  display: block;
+  vertical-align: middle;
+}
+:where(.paddock-auth, [data-slot]) :where(input, textarea)::placeholder {
+  color: var(--ba-muted-foreground);
+  opacity: 1;
+}

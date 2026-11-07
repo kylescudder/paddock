@@ -1,5 +1,12 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Link } from "@tanstack/react-router";
+import {
+  Suspense,
+  lazy,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { Link, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { SignIn, UserButton, useAuth } from "@clerk/tanstack-react-start";
 import {
@@ -32,6 +39,8 @@ import {
   Zap,
 } from "lucide-react";
 import { libraryQuery } from "../lib/library";
+import { authClient } from "../lib/auth-client";
+import { clearPendingSignIn } from "../lib/pending-sign-in";
 import { errorMessage, post, request } from "../lib/api";
 import { Studio } from "./Studio";
 import { OpenRouterSpend } from "./OpenRouterSpend";
@@ -46,6 +55,15 @@ import {
   type PublicLibrary,
   type SessionKey,
 } from "../../shared/types.ts";
+
+// Better Auth UI loads only for signed-in owners, never on public pages.
+const BetterAuthUserMenu = lazy(() =>
+  import("./BetterAuthUserMenu").then(({ BetterAuthUserMenu }) => ({
+    default: BetterAuthUserMenu,
+  })),
+);
+const useAuthProvider = () =>
+  useRouteContext({ from: "__root__" }).app.authProvider;
 
 const raceLabel = (event: LibraryEvent) =>
   event.name
@@ -107,6 +125,7 @@ export function App({
   admin: boolean;
   children: (notify: (text: string) => void) => ReactNode;
 }) {
+  const betterAuth = useAuthProvider() === "better-auth";
   const [toast, setToast] = useState("");
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const notify = (text: string) => {
@@ -121,13 +140,14 @@ export function App({
         <div className="topbar-middle">
           <span className="tiny-square" /> THE FORMULA 1 ARTWORK COLLECTION
         </div>
-        <Link
-          className={`admin-link ${admin ? "active" : ""}`}
-          to={admin ? "/" : "/admin"}
-        >
-          {admin ? <ArrowLeft size={14} /> : <LockKeyhole size={14} />}
-          <span>{admin ? "Back to collection" : "Owner workspace"}</span>
-        </Link>
+        {betterAuth ? (
+          <div className="topbar-actions">
+            <AdminLink admin={admin} />
+            <BetterAuthAccount />
+          </div>
+        ) : (
+          <AdminLink admin={admin} />
+        )}
       </header>
       {children(notify)}
       {toast && (
@@ -143,6 +163,31 @@ export function App({
         </div>
       )}
     </>
+  );
+}
+
+function AdminLink({ admin }: { admin: boolean }) {
+  return (
+    <Link
+      className={`admin-link ${admin ? "active" : ""}`}
+      to={admin ? "/" : "/admin"}
+    >
+      {admin ? <ArrowLeft size={14} /> : <LockKeyhole size={14} />}
+      <span>{admin ? "Back to collection" : "Owner workspace"}</span>
+    </Link>
+  );
+}
+// Better Auth's avatar menu (Profile, Sign out) for a signed-in owner.
+function BetterAuthAccount() {
+  const { data: session } = authClient.useSession();
+  useEffect(() => {
+    if (session) clearPendingSignIn();
+  }, [session]);
+  if (!session) return null;
+  return (
+    <Suspense fallback={<span className="account-placeholder" />}>
+      <BetterAuthUserMenu />
+    </Suspense>
   );
 }
 
@@ -764,16 +809,19 @@ interface StudioRoute {
   openStudio: (eventId?: string) => void;
 }
 export function AdminGate({
+  authProvider,
   authConfigured,
   hasClerk,
   notify,
   ...route
 }: {
+  authProvider: "clerk" | "better-auth";
   authConfigured: boolean;
   hasClerk: boolean;
   notify: (text: string) => void;
 } & StudioRoute) {
-  if (!authConfigured || !hasClerk)
+  const betterAuth = authProvider === "better-auth";
+  if (!authConfigured || (!betterAuth && !hasClerk))
     return (
       <main className="setup-page">
         <div className="setup-icon">
@@ -786,8 +834,9 @@ export function AdminGate({
           Your controls.
         </h1>
         <p>
-          The public library is ready. Connect your Clerk account on the host to
-          unlock settings, generation, and Emby sync.
+          {betterAuth
+            ? "The public library is ready. Finish the sign-in settings on the host to unlock settings, generation, and Emby sync."
+            : "The public library is ready. Connect your Clerk account on the host to unlock settings, generation, and Emby sync."}
         </p>
         <div className="setup-checklist">
           <span>
@@ -809,7 +858,67 @@ export function AdminGate({
         </Link>
       </main>
     );
-  return <AuthenticatedAdmin notify={notify} {...route} />;
+  return betterAuth ? (
+    <BetterAuthAdmin notify={notify} {...route} />
+  ) : (
+    <AuthenticatedAdmin notify={notify} {...route} />
+  );
+}
+// Better Auth: signed-out owners go to the sign-in page and come back here.
+function BetterAuthAdmin({
+  notify,
+  ...route
+}: { notify: (text: string) => void } & StudioRoute) {
+  const { data: session, isPending, refetch } = authClient.useSession();
+  const navigate = useNavigate();
+  const [owner, setOwner] = useState(false);
+  const [error, setError] = useState("");
+  const userId = session?.user.id;
+  useEffect(() => {
+    if (userId) {
+      clearPendingSignIn();
+      setError("");
+      request("/api/admin/me")
+        .then(() => setOwner(true))
+        .catch((error) => setError(errorMessage(error)));
+    } else if (!isPending) {
+      setOwner(false);
+      // The cached session can lag just after sign-in, so confirm with the
+      // server before sending the owner back to the sign-in page.
+      let cancelled = false;
+      void authClient.getSession().then(({ data }) => {
+        if (cancelled) return;
+        if (data) return void refetch();
+        const back = window.location.pathname + window.location.search;
+        void navigate({
+          href: `/auth/sign-in?redirectTo=${encodeURIComponent(back)}`,
+          replace: true,
+        });
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+  }, [isPending, navigate, refetch, userId]);
+  if (error)
+    return (
+      <main className="setup-page">
+        <LockKeyhole size={30} />
+        <h1>This workspace is private.</h1>
+        <p>{error}</p>
+        <Link className="text-link" to="/">
+          Return to the collection <ArrowRight size={15} />
+        </Link>
+      </main>
+    );
+  return owner && userId ? (
+    <Admin notify={notify} {...route} />
+  ) : (
+    <div className="library-loading">
+      <LoaderCircle className="spin" />
+      {userId ? "Checking owner access…" : "Loading your workspace…"}
+    </div>
+  );
 }
 function AuthenticatedAdmin({
   notify,
@@ -853,7 +962,7 @@ function AuthenticatedAdmin({
       </main>
     );
   return owner ? (
-    <Admin notify={notify} {...route} />
+    <Admin notify={notify} account={<UserButton />} {...route} />
   ) : (
     <div className="library-loading">
       <LoaderCircle className="spin" />
@@ -864,9 +973,11 @@ function AuthenticatedAdmin({
 
 function Admin({
   notify,
+  account,
   studio,
   openStudio,
-}: { notify: (text: string) => void } & StudioRoute) {
+}: { notify: (text: string) => void; account?: ReactNode } & StudioRoute) {
+  const betterAuth = useAuthProvider() === "better-auth";
   const [status, setStatus] = useState<AdminStatus | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [error, setError] = useState("");
@@ -1022,7 +1133,7 @@ function Admin({
           <h1>Keep the collection moving.</h1>
           <p>One calendar. Your models. Everything in its place.</p>
         </div>
-        <UserButton />
+        {account}
       </div>
       <div className="admin-tabs">
         <button
@@ -1343,8 +1454,9 @@ function Admin({
             <div className="owner-note">
               <LockKeyhole size={16} />
               <p>
-                Only your configured Clerk account can change settings, generate
-                artwork, or update Emby.
+                {betterAuth
+                  ? "Only approved accounts can change settings, generate artwork, or update Emby."
+                  : "Only your configured Clerk account can change settings, generate artwork, or update Emby."}
               </p>
             </div>
           </div>

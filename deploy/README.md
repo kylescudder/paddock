@@ -191,3 +191,105 @@ running; do not drop application tables or restore a database just to undo this
 foundation. Future migrations must remain additive and compatible with the prior
 image. Do not run an older Drizzle release’s migrator against a newer migration
 history: the prefix check deliberately refuses unknown history.
+
+## Better Auth rollout and Clerk rollback
+
+`AUTH_PROVIDER` selects exactly one sign-in provider for both the server and the
+rendered client. It defaults to `clerk`, so this additive release can be deployed
+before the owner sign-in changes. Changing it requires recreating the app
+container; do not try to hot-swap its process environment. With `clerk`, the
+owner workspace, Clerk's sign-in and account menu are unchanged, and every
+`/api/auth/*` path returns 404.
+
+The owner migration `0001_better_auth` adds `auth_user`, `auth_session`,
+`auth_account`, `auth_verification`, `auth_passkey`, `auth_rate_limit` and
+`auth_email_limit`. It does not alter or rewrite any existing table. Paddock keeps
+no per-user data (every signed-in owner administers the same library), so there
+are no Clerk user IDs to link: access is the email allowlist itself. Runtime CRUD
+on the new tables uses the existing `paddock_runtime` role through the host's
+public-table default privileges and the existing four-connection pool.
+
+Prepare these settings in the host's protected `.env`, retaining the Clerk keys:
+
+```dotenv
+AUTH_PROVIDER=clerk
+BETTER_AUTH_URL=https://paddock.thescudders.org
+BETTER_AUTH_SECRET=<stable, cryptographically random app-specific secret>
+AUTH_ALLOWED_EMAILS=<comma-separated owner emails>
+BREVO_API_KEY=<Paddock transactional API key>
+AUTH_EMAIL_FROM=paddock@thescudders.org
+AUTH_EMAIL_DAILY_LIMIT=40
+```
+
+These are required only when `better-auth` is selected; a missing or invalid
+value is reported by name (never value) and keeps the owner workspace closed.
+In production `BETTER_AUTH_URL` must be `https://`, and the passkey RP ID is its
+exact hostname. Generate a secret of at least 32 characters and keep it stable
+across releases. Keep it and the sending API key out of Git, image layers and CI.
+Use a sender address on a domain verified in Brevo.
+
+Access model: there is no sign-up. Only addresses in `AUTH_ALLOWED_EMAILS`
+(trimmed, lowercased) can get an account, which is created the first time they
+sign in by email code or magic link. Every protected API also requires that the
+session's email is verified and still on the list, so removing an address revokes
+existing sessions on the next request. Each owner proves email ownership again;
+Clerk identities are not imported.
+
+Cutover:
+
+1. Deploy the image through the normal attested release with `AUTH_PROVIDER=clerk`
+   (or unset). The owner migration adds the auth tables; the existing acceptance
+   checks run as before.
+2. Add the settings above to the protected `.env`.
+3. Set `AUTH_PROVIDER=better-auth` and recreate only the `web` service with the
+   same image (`docker compose --env-file .env up -d --no-deps web`).
+4. Check the public gallery, signed-out `/admin` (redirects to `/auth/sign-in`),
+   email-code sign-in, the owner workspace, Profile → Set password → reset link
+   → password sign-in, and passkey enrollment and sign-in on a real device.
+
+Rollback: set `AUTH_PROVIDER=clerk` and recreate only the `web` service with the
+same image. Keep the Clerk keys, its production instance and DNS available until
+Better Auth has been in use for a while. The retained previous image is another
+rollback option. Leave the additive auth tables in place; never restore an older
+database just to change providers.
+
+Sign-in lives at `/auth/<view>` with four methods that link to each other:
+password (`/auth/sign-in`, the default), email code (`/auth/email-otp`), magic link
+(`/auth/magic-link`) and passkey. Forgot/reset password use `/auth/forgot-password`
+and `/auth/reset-password`; `/auth/sign-up` redirects to sign-in. They use the
+official Better Auth UI shadcn components restyled to Paddock's dark palette and
+red accent; the public gallery does not load them. Every method opens `/admin`,
+or a same-site `?redirectTo=` path such as `/profile`. Signed-in owners get an
+avatar menu with Profile and Sign out; sign-out returns to the gallery.
+
+`/profile` has a display name, optional first/last names, the read-only verified
+email, password (a "Set password" reset link when none exists, then change
+password) and passkeys. There is no avatar upload: Paddock has no per-user
+storage for it. `/api/auth/update-user` accepts only name fields, requires a
+verified allowlisted session and the exact app `Origin`.
+
+Emails: six-digit codes (ten minutes, five attempts, stored as a keyed HMAC),
+magic links (ten minutes, single use, stored hashed) and reset links (30 minutes,
+single use; a reset revokes existing sessions). Passwords are 12–128 characters.
+Mail is only sent to allowlisted addresses; any other address gets the same
+generic success response. Persistent limits in `auth_email_limit`: one email per
+recipient per minute, five per hour, and an app-wide `AUTH_EMAIL_DAILY_LIMIT`
+(default 40 per rolling 24 hours, failures included). Per-IP limits use
+Cloudflare's `CF-Connecting-IP`. Mail goes through Brevo's HTTP API with an 8 s
+timeout; responses, codes, links and keys are never logged. Emails use the
+Paddock logo at `/email-logo.png` (PNG, because Gmail does not show SVG).
+
+Redirect safety: `callbackURL`, `newUserCallbackURL`, `errorCallbackURL` and reset
+`redirectTo` must resolve to this origin; control characters, backslashes, and
+paths that normalise to `//host` are refused. The client's `?redirectTo=` handling
+applies the same rule. The app's `/api/auth/$` route forwards only the endpoints
+this UI uses (session, sign-out, profile update, email code, password, magic link,
+password reset/change, list accounts and passkeys) and returns 404 for the rest,
+including `sign-up/email`.
+
+Email codes are the most reliable method on phones (magic links open wherever
+the mail app opens links). The email-code form keeps only the pending email and
+request time in tab-scoped storage for ten minutes so a mobile reload does not
+send another email; it never stores the code. Brevo's free plan adds a
+`List-Unsubscribe` header to transactional mail, which some clients show as a
+mailing-list banner.

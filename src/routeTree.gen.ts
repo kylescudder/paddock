@@ -11,9 +11,11 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as ApiSplatRouteImport } from './routes/api/$'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ApiLibraryRouteImport } from './routes/api/library'
+import { Route as AuthPathRouteImport } from './routes/auth.$path'
 import { Route as ApiAdminBackgroundRouteImport } from './routes/api/admin/background'
 import { Route as ApiAdminEventsRouteImport } from './routes/api/admin/events'
 import { Route as ApiAdminGenerateRouteImport } from './routes/api/admin/generate'
@@ -23,6 +25,7 @@ import { Route as ApiAdminSettingsRouteImport } from './routes/api/admin/setting
 import { Route as ApiAdminStatusRouteImport } from './routes/api/admin/status'
 import { Route as ApiAdminSyncRouteImport } from './routes/api/admin/sync'
 import { Route as ApiAdminUsageRouteImport } from './routes/api/admin/usage'
+import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiAdminEmbyCandidatesRouteImport } from './routes/api/admin/emby/candidates'
 import { Route as ApiAdminEmbyLibrariesRouteImport } from './routes/api/admin/emby/libraries'
 import { Route as ApiAdminEmbyMappingsRouteImport } from './routes/api/admin/emby/mappings'
@@ -47,6 +50,11 @@ const AdminRoute = AdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProfileRoute = ProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiSplatRoute = ApiSplatRouteImport.update({
   id: '/api/$',
   path: '/api/$',
@@ -60,6 +68,11 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
 const ApiLibraryRoute = ApiLibraryRouteImport.update({
   id: '/api/library',
   path: '/api/library',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthPathRoute = AuthPathRouteImport.update({
+  id: '/auth/$path',
+  path: '/auth/$path',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAdminBackgroundRoute = ApiAdminBackgroundRouteImport.update({
@@ -105,6 +118,11 @@ const ApiAdminSyncRoute = ApiAdminSyncRouteImport.update({
 const ApiAdminUsageRoute = ApiAdminUsageRouteImport.update({
   id: '/api/admin/usage',
   path: '/api/admin/usage',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
+  id: '/api/auth/$',
+  path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAdminEmbyCandidatesRoute = ApiAdminEmbyCandidatesRouteImport.update({
@@ -182,9 +200,11 @@ const ApiAdminStudioEventIdVersionsVersionIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/profile': typeof ProfileRoute
   '/api/$': typeof ApiSplatRoute
   '/api/health': typeof ApiHealthRoute
   '/api/library': typeof ApiLibraryRoute
+  '/auth/$path': typeof AuthPathRoute
   '/api/admin/background': typeof ApiAdminBackgroundRoute
   '/api/admin/events': typeof ApiAdminEventsRoute
   '/api/admin/generate': typeof ApiAdminGenerateRoute
@@ -194,6 +214,7 @@ export interface FileRoutesByFullPath {
   '/api/admin/status': typeof ApiAdminStatusRoute
   '/api/admin/sync': typeof ApiAdminSyncRoute
   '/api/admin/usage': typeof ApiAdminUsageRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/admin/emby/candidates': typeof ApiAdminEmbyCandidatesRoute
   '/api/admin/emby/libraries': typeof ApiAdminEmbyLibrariesRoute
   '/api/admin/emby/mappings': typeof ApiAdminEmbyMappingsRouteWithChildren
@@ -211,9 +232,11 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/profile': typeof ProfileRoute
   '/api/$': typeof ApiSplatRoute
   '/api/health': typeof ApiHealthRoute
   '/api/library': typeof ApiLibraryRoute
+  '/auth/$path': typeof AuthPathRoute
   '/api/admin/background': typeof ApiAdminBackgroundRoute
   '/api/admin/events': typeof ApiAdminEventsRoute
   '/api/admin/generate': typeof ApiAdminGenerateRoute
@@ -223,6 +246,7 @@ export interface FileRoutesByTo {
   '/api/admin/status': typeof ApiAdminStatusRoute
   '/api/admin/sync': typeof ApiAdminSyncRoute
   '/api/admin/usage': typeof ApiAdminUsageRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/admin/emby/candidates': typeof ApiAdminEmbyCandidatesRoute
   '/api/admin/emby/libraries': typeof ApiAdminEmbyLibrariesRoute
   '/api/admin/emby/mappings': typeof ApiAdminEmbyMappingsRouteWithChildren
@@ -241,9 +265,11 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/profile': typeof ProfileRoute
   '/api/$': typeof ApiSplatRoute
   '/api/health': typeof ApiHealthRoute
   '/api/library': typeof ApiLibraryRoute
+  '/auth/$path': typeof AuthPathRoute
   '/api/admin/background': typeof ApiAdminBackgroundRoute
   '/api/admin/events': typeof ApiAdminEventsRoute
   '/api/admin/generate': typeof ApiAdminGenerateRoute
@@ -253,6 +279,7 @@ export interface FileRoutesById {
   '/api/admin/status': typeof ApiAdminStatusRoute
   '/api/admin/sync': typeof ApiAdminSyncRoute
   '/api/admin/usage': typeof ApiAdminUsageRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/admin/emby/candidates': typeof ApiAdminEmbyCandidatesRoute
   '/api/admin/emby/libraries': typeof ApiAdminEmbyLibrariesRoute
   '/api/admin/emby/mappings': typeof ApiAdminEmbyMappingsRouteWithChildren
@@ -272,9 +299,11 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
+    | '/profile'
     | '/api/$'
     | '/api/health'
     | '/api/library'
+    | '/auth/$path'
     | '/api/admin/background'
     | '/api/admin/events'
     | '/api/admin/generate'
@@ -284,6 +313,7 @@ export interface FileRouteTypes {
     | '/api/admin/status'
     | '/api/admin/sync'
     | '/api/admin/usage'
+    | '/api/auth/$'
     | '/api/admin/emby/candidates'
     | '/api/admin/emby/libraries'
     | '/api/admin/emby/mappings'
@@ -301,9 +331,11 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/admin'
+    | '/profile'
     | '/api/$'
     | '/api/health'
     | '/api/library'
+    | '/auth/$path'
     | '/api/admin/background'
     | '/api/admin/events'
     | '/api/admin/generate'
@@ -313,6 +345,7 @@ export interface FileRouteTypes {
     | '/api/admin/status'
     | '/api/admin/sync'
     | '/api/admin/usage'
+    | '/api/auth/$'
     | '/api/admin/emby/candidates'
     | '/api/admin/emby/libraries'
     | '/api/admin/emby/mappings'
@@ -330,9 +363,11 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/admin'
+    | '/profile'
     | '/api/$'
     | '/api/health'
     | '/api/library'
+    | '/auth/$path'
     | '/api/admin/background'
     | '/api/admin/events'
     | '/api/admin/generate'
@@ -342,6 +377,7 @@ export interface FileRouteTypes {
     | '/api/admin/status'
     | '/api/admin/sync'
     | '/api/admin/usage'
+    | '/api/auth/$'
     | '/api/admin/emby/candidates'
     | '/api/admin/emby/libraries'
     | '/api/admin/emby/mappings'
@@ -360,9 +396,11 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
+  ProfileRoute: typeof ProfileRoute
   ApiSplatRoute: typeof ApiSplatRoute
   ApiHealthRoute: typeof ApiHealthRoute
   ApiLibraryRoute: typeof ApiLibraryRoute
+  AuthPathRoute: typeof AuthPathRoute
   ApiAdminBackgroundRoute: typeof ApiAdminBackgroundRoute
   ApiAdminEventsRoute: typeof ApiAdminEventsRoute
   ApiAdminGenerateRoute: typeof ApiAdminGenerateRoute
@@ -372,6 +410,7 @@ export interface RootRouteChildren {
   ApiAdminStatusRoute: typeof ApiAdminStatusRoute
   ApiAdminSyncRoute: typeof ApiAdminSyncRoute
   ApiAdminUsageRoute: typeof ApiAdminUsageRoute
+  ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiAdminEmbyCandidatesRoute: typeof ApiAdminEmbyCandidatesRoute
   ApiAdminEmbyLibrariesRoute: typeof ApiAdminEmbyLibrariesRoute
   ApiAdminEmbyMappingsRoute: typeof ApiAdminEmbyMappingsRouteWithChildren
@@ -397,6 +436,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/profile': {
+      id: '/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof ProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/$': {
       id: '/api/$'
       path: '/api/$'
@@ -416,6 +462,13 @@ declare module '@tanstack/react-router' {
       path: '/api/library'
       fullPath: '/api/library'
       preLoaderRoute: typeof ApiLibraryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/$path': {
+      id: '/auth/$path'
+      path: '/auth/$path'
+      fullPath: '/auth/$path'
+      preLoaderRoute: typeof AuthPathRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/admin/background': {
@@ -479,6 +532,13 @@ declare module '@tanstack/react-router' {
       path: '/api/admin/usage'
       fullPath: '/api/admin/usage'
       preLoaderRoute: typeof ApiAdminUsageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/auth/$': {
+      id: '/api/auth/$'
+      path: '/api/auth/$'
+      fullPath: '/api/auth/$'
+      preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/admin/emby/candidates': {
@@ -612,9 +672,11 @@ const ApiAdminStudioEventIdRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
+  ProfileRoute: ProfileRoute,
   ApiSplatRoute: ApiSplatRoute,
   ApiHealthRoute: ApiHealthRoute,
   ApiLibraryRoute: ApiLibraryRoute,
+  AuthPathRoute: AuthPathRoute,
   ApiAdminBackgroundRoute: ApiAdminBackgroundRoute,
   ApiAdminEventsRoute: ApiAdminEventsRoute,
   ApiAdminGenerateRoute: ApiAdminGenerateRoute,
@@ -624,6 +686,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAdminStatusRoute: ApiAdminStatusRoute,
   ApiAdminSyncRoute: ApiAdminSyncRoute,
   ApiAdminUsageRoute: ApiAdminUsageRoute,
+  ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiAdminEmbyCandidatesRoute: ApiAdminEmbyCandidatesRoute,
   ApiAdminEmbyLibrariesRoute: ApiAdminEmbyLibrariesRoute,
   ApiAdminEmbyMappingsRoute: ApiAdminEmbyMappingsRouteWithChildren,
