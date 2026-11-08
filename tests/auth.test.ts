@@ -243,7 +243,9 @@ test("a recipient's resend cooldown keeps the previous code and cross-site reque
   assert.equal((await send()).status, 200);
   const first = fixture.sent.get(email)!;
   const tooSoon = await send();
-  assert.equal(tooSoon.status, 429);
+  // Indistinguishable from the answer for an address that gets no mail.
+  assert.equal(tooSoon.status, 200);
+  assert.deepEqual(await tooSoon.json(), { success: true });
   assert.equal(fixture.sent.get(email), first);
   // The minute window is persistent, not per-process.
   const [limit] =
@@ -273,6 +275,44 @@ test("a recipient's resend cooldown keeps the previous code and cross-site reque
   assert.equal(signedIn.status, 200, await signedIn.clone().text());
 });
 
+test("a throttled allowlisted address gets the same answer as an unlisted one", async () => {
+  const fixture = await authFixture();
+  const endpoints = [
+    ["/email-otp/send-verification-otp", { type: "sign-in" }],
+    ["/sign-in/magic-link", { callbackURL: "/admin" }],
+    ["/request-password-reset", { redirectTo: "/auth/reset-password" }],
+  ] as const;
+  const answer = async (path: string, extra: object, email: string) => {
+    // The per-IP limit is separate; keep it out of the comparison.
+    await sql`DELETE FROM auth_rate_limit`;
+    const response = await fixture.request(path, { email, ...extra });
+    return { status: response.status, body: await response.text() };
+  };
+  const owned = "owner@thescudders.test";
+  assert.equal(
+    (await answer(endpoints[0][0], endpoints[0][1], owned)).status,
+    200,
+  );
+  const code = fixture.sent.get(owned)!;
+  for (const [path, extra] of endpoints) {
+    const throttled = await answer(path, extra, owned);
+    const unlisted = await answer(path, extra, "stranger@example.com");
+    assert.deepEqual(throttled, unlisted, path);
+    assert.equal(throttled.status, 200, path);
+  }
+  // Nothing more was sent or charged, and the first code still works.
+  assert.equal(fixture.links.length, 0);
+  assert.equal(fixture.sent.get(owned), code);
+  const [global] =
+    await sql`SELECT count FROM auth_email_limit WHERE key = 'global:day'`;
+  assert.equal(global.count, 1);
+  assert.equal(
+    (await fixture.request("/sign-in/email-otp", { email: owned, otp: code }))
+      .status,
+    200,
+  );
+});
+
 test("password, reset and magic links are allowlisted, single-use, same-site and sign-up stays closed", async () => {
   const fixture = await authFixture();
   const password = "pit lane to parc ferme";
@@ -295,16 +335,14 @@ test("password, reset and magic links are allowlisted, single-use, same-site and
     ).status,
     401,
   );
-  // The code above used this address's one-email-a-minute allowance.
-  assert.equal(
-    (
-      await fixture.request("/request-password-reset", {
-        email: "owner@thescudders.test",
-        redirectTo: "/auth/reset-password",
-      })
-    ).status,
-    429,
-  );
+  // The code above used this address's one-email-a-minute allowance. The
+  // refusal looks exactly like the answer for an address that gets no mail.
+  const tooSoon = await fixture.request("/request-password-reset", {
+    email: "owner@thescudders.test",
+    redirectTo: "/auth/reset-password",
+  });
+  assert.equal(tooSoon.status, 200);
+  assert.deepEqual(await tooSoon.json(), { status: true });
   assert.equal(fixture.links.length, 0);
   await sql`DELETE FROM auth_email_limit`;
 

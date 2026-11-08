@@ -7,10 +7,18 @@ import { authEmailLimit } from "./auth-schema.ts";
 
 export type AuthDatabase = PostgresJsDatabase<typeof schema>;
 
+class RecipientThrottled extends Error {}
+
 // Persistent, atomic per-recipient cooldown/hour limits and an app-wide
 // delivery budget. Reserve before Better Auth rotates a code or link, so an
 // impatient resend that is refused keeps the previous one usable. No database
 // connection is held while the mail provider is called.
+//
+// Returns false when this recipient is throttled. Callers must then answer with
+// the same generic success as an address that gets no mail, so the response
+// never reveals who is allowlisted; the earlier code or link stays valid. Only
+// the app-wide budget refuses with an error, and nothing is charged for a
+// throttled recipient (the transaction rolls back).
 export async function reserveEmailDelivery(
   database: AuthDatabase,
   email: string,
@@ -25,27 +33,35 @@ export async function reserveEmailDelivery(
     { key: `recipient:${recipient}:hour`, seconds: 3600, max: 5 },
     { key: `recipient:${recipient}:minute`, seconds: 60, max: 1 },
   ];
-  await database.transaction(async (transaction) => {
-    for (const limit of limits) {
-      const expired = sql`${authEmailLimit.windowStartedAt} <= ${new Date(now.getTime() - limit.seconds * 1000).toISOString()}`;
-      const [reserved] = await transaction
-        .insert(authEmailLimit)
-        .values({ key: limit.key, count: 1, windowStartedAt: now })
-        .onConflictDoUpdate({
-          target: authEmailLimit.key,
-          set: {
-            count: sql`CASE WHEN ${expired} THEN 1 ELSE ${authEmailLimit.count} + 1 END`,
-            windowStartedAt: sql`CASE WHEN ${expired} THEN ${now.toISOString()}::timestamptz ELSE ${authEmailLimit.windowStartedAt} END`,
-          },
-          setWhere: sql`${expired} OR ${authEmailLimit.count} < ${limit.max}`,
-        })
-        .returning({ count: authEmailLimit.count });
-      if (!reserved)
-        throw new APIError("TOO_MANY_REQUESTS", {
-          message: "Please wait before requesting another sign-in email.",
-        });
-    }
-  });
+  try {
+    await database.transaction(async (transaction) => {
+      for (const limit of limits) {
+        const expired = sql`${authEmailLimit.windowStartedAt} <= ${new Date(now.getTime() - limit.seconds * 1000).toISOString()}`;
+        const [reserved] = await transaction
+          .insert(authEmailLimit)
+          .values({ key: limit.key, count: 1, windowStartedAt: now })
+          .onConflictDoUpdate({
+            target: authEmailLimit.key,
+            set: {
+              count: sql`CASE WHEN ${expired} THEN 1 ELSE ${authEmailLimit.count} + 1 END`,
+              windowStartedAt: sql`CASE WHEN ${expired} THEN ${now.toISOString()}::timestamptz ELSE ${authEmailLimit.windowStartedAt} END`,
+            },
+            setWhere: sql`${expired} OR ${authEmailLimit.count} < ${limit.max}`,
+          })
+          .returning({ count: authEmailLimit.count });
+        if (!reserved) {
+          if (limit.key !== "global:day") throw new RecipientThrottled();
+          throw new APIError("TOO_MANY_REQUESTS", {
+            message: "Please wait before requesting another sign-in email.",
+          });
+        }
+      }
+    });
+  } catch (error) {
+    if (error instanceof RecipientThrottled) return false;
+    throw error;
+  }
+  return true;
 }
 
 export type MailConfig = { apiKey: string; from: string };
