@@ -262,11 +262,24 @@ red accent; the public gallery does not load them. Every method opens `/admin`,
 or a same-site `?redirectTo=` path such as `/profile`. Signed-in owners get an
 avatar menu with Profile and Sign out; sign-out returns to the gallery.
 
-`/profile` has a display name, optional first/last names, the read-only verified
-email, password (a "Set password" reset link when none exists, then change
-password) and passkeys. There is no avatar upload: Paddock has no per-user
-storage for it. `/api/auth/update-user` accepts only name fields, requires a
+`/profile` has a profile photo, a display name, optional first/last names, the
+read-only verified email, password (a "Set password" reset link when none exists,
+then change password) and passkeys. `/api/auth/update-user` accepts name fields
+and, for `image`, only the value the photo endpoint already stored; it requires a
 verified allowlisted session and the exact app `Origin`.
+
+Profile photos: migration `0002_profile` adds `user_profile` (one row per
+`auth_user`, removed with it). `GET`/`PUT`/`DELETE /api/profile/avatar` act only
+on the signed-in owner's own photo and need a verified, still-allowlisted email
+(and the exact `Origin` for changes); with Clerk selected the path is a 404.
+Uploads are JPEG, PNG or WebP up to 2 MiB, checked by signature, decoded by
+`sharp` (already in the image for gallery uploads) with a pixel bound, resized to
+a 256 px square and re-encoded as JPEG, which drops EXIF/GPS and other metadata.
+The photo is stored as `bytea` in Paddock's own Postgres, so the existing
+encrypted project backups cover it; nothing is written to `data/`. Responses are
+`no-store`, `nosniff` and same-origin only, and each upload gets a new version in
+its URL. The runtime role reaches the table through the same default privileges
+as the auth tables.
 
 Emails: six-digit codes (ten minutes, five attempts, stored as a keyed HMAC),
 magic links (ten minutes, single use, stored hashed) and reset links (30 minutes,

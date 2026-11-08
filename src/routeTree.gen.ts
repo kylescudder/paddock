@@ -26,6 +26,7 @@ import { Route as ApiAdminStatusRouteImport } from './routes/api/admin/status'
 import { Route as ApiAdminSyncRouteImport } from './routes/api/admin/sync'
 import { Route as ApiAdminUsageRouteImport } from './routes/api/admin/usage'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiProfileAvatarRouteImport } from './routes/api/profile/avatar'
 import { Route as ApiAdminEmbyCandidatesRouteImport } from './routes/api/admin/emby/candidates'
 import { Route as ApiAdminEmbyLibrariesRouteImport } from './routes/api/admin/emby/libraries'
 import { Route as ApiAdminEmbyMappingsRouteImport } from './routes/api/admin/emby/mappings'
@@ -125,6 +126,11 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiProfileAvatarRoute = ApiProfileAvatarRouteImport.update({
+  id: '/api/profile/avatar',
+  path: '/api/profile/avatar',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAdminEmbyCandidatesRoute = ApiAdminEmbyCandidatesRouteImport.update({
   id: '/api/admin/emby/candidates',
   path: '/api/admin/emby/candidates',
@@ -215,6 +221,7 @@ export interface FileRoutesByFullPath {
   '/api/admin/sync': typeof ApiAdminSyncRoute
   '/api/admin/usage': typeof ApiAdminUsageRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/profile/avatar': typeof ApiProfileAvatarRoute
   '/api/admin/emby/candidates': typeof ApiAdminEmbyCandidatesRoute
   '/api/admin/emby/libraries': typeof ApiAdminEmbyLibrariesRoute
   '/api/admin/emby/mappings': typeof ApiAdminEmbyMappingsRouteWithChildren
@@ -247,6 +254,7 @@ export interface FileRoutesByTo {
   '/api/admin/sync': typeof ApiAdminSyncRoute
   '/api/admin/usage': typeof ApiAdminUsageRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/profile/avatar': typeof ApiProfileAvatarRoute
   '/api/admin/emby/candidates': typeof ApiAdminEmbyCandidatesRoute
   '/api/admin/emby/libraries': typeof ApiAdminEmbyLibrariesRoute
   '/api/admin/emby/mappings': typeof ApiAdminEmbyMappingsRouteWithChildren
@@ -280,6 +288,7 @@ export interface FileRoutesById {
   '/api/admin/sync': typeof ApiAdminSyncRoute
   '/api/admin/usage': typeof ApiAdminUsageRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/profile/avatar': typeof ApiProfileAvatarRoute
   '/api/admin/emby/candidates': typeof ApiAdminEmbyCandidatesRoute
   '/api/admin/emby/libraries': typeof ApiAdminEmbyLibrariesRoute
   '/api/admin/emby/mappings': typeof ApiAdminEmbyMappingsRouteWithChildren
@@ -314,6 +323,7 @@ export interface FileRouteTypes {
     | '/api/admin/sync'
     | '/api/admin/usage'
     | '/api/auth/$'
+    | '/api/profile/avatar'
     | '/api/admin/emby/candidates'
     | '/api/admin/emby/libraries'
     | '/api/admin/emby/mappings'
@@ -346,6 +356,7 @@ export interface FileRouteTypes {
     | '/api/admin/sync'
     | '/api/admin/usage'
     | '/api/auth/$'
+    | '/api/profile/avatar'
     | '/api/admin/emby/candidates'
     | '/api/admin/emby/libraries'
     | '/api/admin/emby/mappings'
@@ -378,6 +389,7 @@ export interface FileRouteTypes {
     | '/api/admin/sync'
     | '/api/admin/usage'
     | '/api/auth/$'
+    | '/api/profile/avatar'
     | '/api/admin/emby/candidates'
     | '/api/admin/emby/libraries'
     | '/api/admin/emby/mappings'
@@ -411,6 +423,7 @@ export interface RootRouteChildren {
   ApiAdminSyncRoute: typeof ApiAdminSyncRoute
   ApiAdminUsageRoute: typeof ApiAdminUsageRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiProfileAvatarRoute: typeof ApiProfileAvatarRoute
   ApiAdminEmbyCandidatesRoute: typeof ApiAdminEmbyCandidatesRoute
   ApiAdminEmbyLibrariesRoute: typeof ApiAdminEmbyLibrariesRoute
   ApiAdminEmbyMappingsRoute: typeof ApiAdminEmbyMappingsRouteWithChildren
@@ -539,6 +552,13 @@ declare module '@tanstack/react-router' {
       path: '/api/auth/$'
       fullPath: '/api/auth/$'
       preLoaderRoute: typeof ApiAuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/profile/avatar': {
+      id: '/api/profile/avatar'
+      path: '/api/profile/avatar'
+      fullPath: '/api/profile/avatar'
+      preLoaderRoute: typeof ApiProfileAvatarRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/admin/emby/candidates': {
@@ -687,6 +707,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAdminSyncRoute: ApiAdminSyncRoute,
   ApiAdminUsageRoute: ApiAdminUsageRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiProfileAvatarRoute: ApiProfileAvatarRoute,
   ApiAdminEmbyCandidatesRoute: ApiAdminEmbyCandidatesRoute,
   ApiAdminEmbyLibrariesRoute: ApiAdminEmbyLibrariesRoute,
   ApiAdminEmbyMappingsRoute: ApiAdminEmbyMappingsRouteWithChildren,

@@ -5,7 +5,13 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "../server/migrations.ts";
 import * as schema from "../server/schema.ts";
 import { createPaddockAuth } from "../server/auth-factory.ts";
-import { authHandler, type AuthAccess } from "../server/auth.ts";
+import sharp from "sharp";
+import {
+  authHandler,
+  profileHandler,
+  type AuthAccess,
+} from "../server/auth.ts";
+import { createProfileHandler } from "../server/profile.ts";
 import { readAuthEnv } from "../server/auth-env.ts";
 import { guardOverrides } from "../server/guard.ts";
 import { owner } from "../server/api.ts";
@@ -70,7 +76,7 @@ async function authFixture() {
         body: body === undefined ? undefined : JSON.stringify(body),
       }),
     );
-  const access: AuthAccess = { auth, allowedEmails };
+  const access: AuthAccess = { auth, allowedEmails, database: db };
   return { auth, access, request, sent, links, allowedEmails };
 }
 type Fixture = Awaited<ReturnType<typeof authFixture>>;
@@ -449,7 +455,7 @@ test("password, reset and magic links are allowlisted, single-use, same-site and
   assert.equal(strangers.users, 0);
 });
 
-test("profile updates accept names only, from this site, for an owner", async () => {
+test("profile updates accept names, and no outside photo, from this site, for an owner", async () => {
   const fixture = await authFixture();
   const { cookie, user } = await signIn(fixture);
   const update = (body: unknown, from = origin) =>
@@ -499,6 +505,222 @@ test("profile updates accept names only, from this site, for an owner", async ()
   );
 });
 
+test("profile photos are bounded, re-encoded, private to their owner and removable", async () => {
+  const fixture = await authFixture();
+  const { cookie, user } = await signIn(fixture);
+  const other = await signIn(fixture, "second@thescudders.test");
+  const allowedEmails = [...fixture.allowedEmails];
+  const handler = createProfileHandler(db, {
+    origin,
+    allowedEmails,
+    getSession: (headers) => fixture.auth.api.getSession({ headers }),
+  });
+  // EXIF (including a GPS position) that must never be served back.
+  const image = await sharp({
+    create: { width: 640, height: 320, channels: 3, background: "#e10600" },
+  })
+    .jpeg()
+    .withMetadata({
+      exif: {
+        IFD0: { Artist: "Metadata to strip" },
+        IFD3: { GPSLatitudeRef: "N", GPSLatitude: "51/1 30/1 0/1" },
+      },
+    })
+    .toBuffer();
+  assert.ok((await sharp(image).metadata()).exif);
+  const request = (
+    method = "GET",
+    body?: BodyInit,
+    type = "image/jpeg",
+    session = cookie,
+    extra: Record<string, string> = {},
+  ) =>
+    handler(
+      new Request(origin + "/api/profile/avatar", {
+        method,
+        body,
+        headers: {
+          Origin: origin,
+          Cookie: session,
+          "Content-Type": type,
+          ...extra,
+        },
+      }),
+    );
+  const upload = (session = cookie) =>
+    request("PUT", new Uint8Array(image), "image/jpeg", session);
+
+  // Signed out, cross-site and non-image uploads are refused.
+  assert.equal((await request("GET", undefined, "", "")).status, 401);
+  assert.equal((await upload("")).status, 401);
+  assert.equal(
+    (
+      await request("PUT", new Uint8Array(image), "image/jpeg", cookie, {
+        Origin: "https://attacker.example",
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (await request("PUT", '<svg onload="alert(1)"/>', "image/svg+xml")).status,
+    415,
+  );
+  assert.equal(
+    (await request("PUT", '<svg onload="alert(1)"/>', "image/png")).status,
+    400,
+  );
+  assert.equal(
+    (await request("PUT", new TextEncoder().encode("GIF89a"), "image/webp"))
+      .status,
+    400,
+  );
+  // A truncated JPEG has the right signature but cannot be decoded.
+  assert.equal(
+    (await request("PUT", new Uint8Array(image.subarray(0, 200)))).status,
+    400,
+  );
+  // Over 2 MiB, whether declared up front or only discovered while streaming.
+  assert.equal(
+    (await request("PUT", new Uint8Array(2 * 1024 * 1024 + 1))).status,
+    413,
+  );
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (let i = 0; i < 3; i++)
+        controller.enqueue(new Uint8Array(1024 * 1024));
+      controller.close();
+    },
+  });
+  assert.equal(
+    (
+      await handler(
+        new Request(origin + "/api/profile/avatar", {
+          method: "PUT",
+          body: stream,
+          headers: {
+            Origin: origin,
+            Cookie: cookie,
+            "Content-Type": "image/png",
+          },
+          duplex: "half",
+        } as RequestInit),
+      )
+    ).status,
+    413,
+  );
+  assert.equal(
+    (await sql`SELECT count(*)::int AS count FROM user_profile`)[0].count,
+    0,
+  );
+
+  // Upload: a private, versioned 256 px JPEG with no metadata.
+  const first = await upload();
+  assert.equal(first.status, 200, await first.clone().text());
+  assert.equal(first.headers.get("Cache-Control"), "no-store");
+  const initial = (await first.json()) as { image: string };
+  assert.match(initial.image, /^\/api\/profile\/avatar\?v=[\w-]{36}$/);
+  // Only the server-owned value can be confirmed through update-user.
+  assert.equal(
+    (await fixture.request("/update-user", { image: initial.image }, cookie))
+      .status,
+    200,
+  );
+  assert.equal(
+    (
+      await fixture.request(
+        "/update-user",
+        { image: initial.image },
+        other.cookie,
+      )
+    ).status,
+    400,
+  );
+  assert.equal(
+    (await fixture.request("/update-user", { image: null }, cookie)).status,
+    400,
+  );
+  assert.equal(
+    (
+      await fixture.request(
+        "/update-user",
+        { image: "data:image/png;base64,AAAA" },
+        cookie,
+      )
+    ).status,
+    400,
+  );
+  const picture = await request();
+  assert.equal(picture.status, 200);
+  assert.equal(picture.headers.get("Content-Type"), "image/jpeg");
+  assert.equal(picture.headers.get("Cache-Control"), "no-store");
+  assert.equal(picture.headers.get("X-Content-Type-Options"), "nosniff");
+  assert.equal(
+    picture.headers.get("Cross-Origin-Resource-Policy"),
+    "same-origin",
+  );
+  const served = Buffer.from(await picture.arrayBuffer());
+  const metadata = await sharp(served).metadata();
+  assert.equal(metadata.format, "jpeg");
+  assert.equal(metadata.width, 256);
+  assert.equal(metadata.height, 256);
+  assert.equal(metadata.exif, undefined);
+  assert.equal(metadata.icc, undefined);
+  assert.equal(metadata.xmp, undefined);
+  assert.equal(served.includes("Metadata to strip"), false);
+
+  // Another owner sees only their own (absent) photo; there is no user id to
+  // ask for someone else's.
+  const theirs = await request("GET", undefined, "", other.cookie);
+  assert.equal(theirs.status, 404);
+  assert.equal(theirs.headers.get("Content-Type")?.startsWith("image/"), false);
+  assert.equal(
+    (await request("DELETE", undefined, "", other.cookie)).status,
+    200,
+  );
+  assert.equal((await request()).status, 200);
+
+  // Replace: a new version, and auth_user.image follows it.
+  const next = (await (await upload()).json()) as { image: string };
+  assert.notEqual(next.image, initial.image);
+  const [stored] = await sql`SELECT image FROM auth_user WHERE id = ${user.id}`;
+  assert.equal(stored.image, next.image);
+  assert.equal(
+    (await fixture.request("/update-user", { image: initial.image }, cookie))
+      .status,
+    400,
+  );
+
+  // Removed from the allowlist: no access to the photo, even with a session.
+  allowedEmails.splice(allowedEmails.indexOf("owner@thescudders.test"), 1);
+  assert.equal((await request()).status, 403);
+  allowedEmails.push("owner@thescudders.test");
+
+  // Delete clears the photo and the session image, then null is confirmed.
+  const removed = await request("DELETE", undefined, "");
+  assert.equal(removed.status, 200);
+  assert.deepEqual(await removed.json(), { image: null });
+  assert.equal(
+    (await fixture.request("/update-user", { image: null }, cookie)).status,
+    200,
+  );
+  assert.equal((await request()).status, 404);
+  const [cleared] =
+    await sql`SELECT u.image, p.avatar, p.avatar_version FROM auth_user u JOIN user_profile p ON p.user_id = u.id WHERE u.id = ${user.id}`;
+  assert.deepEqual(cleared, {
+    image: null,
+    avatar: null,
+    avatar_version: null,
+  });
+  assert.equal((await request("PATCH", "x")).status, 405);
+  // The photo goes with the account.
+  await upload();
+  await sql`DELETE FROM auth_user WHERE id = ${user.id}`;
+  assert.equal(
+    (await sql`SELECT count(*)::int AS count FROM user_profile`)[0].count,
+    0,
+  );
+});
+
 test("the app's auth route forwards only allowlisted endpoints, and nothing while Clerk is selected", async () => {
   const keys = [
     "AUTH_PROVIDER",
@@ -523,6 +745,14 @@ test("the app's auth route forwards only allowlisted endpoints, and nothing whil
         body: method === "GET" ? undefined : "{}",
       }),
     );
+  const photo = (method: string) =>
+    profileHandler(
+      new Request(origin + "/api/profile/avatar", {
+        method,
+        headers: { Origin: origin, "Content-Type": "image/jpeg" },
+        body: method === "PUT" ? new Uint8Array(4) : undefined,
+      }),
+    );
   try {
     await authFixture();
     Object.assign(process.env, {
@@ -542,6 +772,9 @@ test("the app's auth route forwards only allowlisted endpoints, and nothing whil
         404,
         path,
       );
+    // Nor the profile photo endpoint.
+    for (const method of ["GET", "PUT", "DELETE"])
+      assert.equal((await photo(method)).status, 404, method);
 
     process.env.AUTH_PROVIDER = "better-auth";
     for (const path of [
@@ -571,6 +804,9 @@ test("the app's auth route forwards only allowlisted endpoints, and nothing whil
       assert.notEqual(response.status, 404, path);
       assert.equal(response.headers.get("Cache-Control"), "no-store", path);
     }
+    // The app's photo route is wired to the protected handler.
+    for (const method of ["GET", "PUT", "DELETE"])
+      assert.equal((await photo(method)).status, 401, method);
   } finally {
     await closeConnection();
     (globalThis as { __paddockAuth?: unknown }).__paddockAuth = undefined;

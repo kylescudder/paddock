@@ -21,17 +21,17 @@ import {
   isAuthFormFieldInvalid,
   useAuthForm,
 } from "../../auth-form";
+import { ChangeAvatar } from "./change-avatar";
 
 export type UserProfileProps = {
   className?: string;
 };
 
 /**
- * Render a profile card that lets the authenticated user view and update their display and first/last names.
- * Paddock has no avatar storage, so the registry's avatar upload is omitted.
+ * Render a profile card that lets the authenticated user view and update their profile photo, display name and first/last names.
  *
  * @param className - Optional additional CSS class names applied to the card container
- * @returns A JSX element containing the profile card with editable name fields
+ * @returns A JSX element containing the profile card with avatar upload and editable name fields
  */
 export function UserProfile({ className }: UserProfileProps) {
   const previousUserId = useRef<string | null>(null);
@@ -71,7 +71,8 @@ export function UserProfile({ className }: UserProfileProps) {
 
   useEffect(() => {
     if (!session) return;
-    // Preserve unfinished edits when focus refreshes update the session. A different account must always get its own form values.
+    // Preserve unfinished edits when focus refreshes or avatar changes update
+    // the session. A different account must always get its own form values.
     if (previousUserId.current === session.user.id && form.state.isDirty)
       return;
     previousUserId.current = session.user.id;
@@ -101,6 +102,8 @@ export function UserProfile({ className }: UserProfileProps) {
         <form.AuthFormRoot>
           <Card className={cn(className)}>
             <CardContent className="flex flex-col gap-6">
+              <ChangeAvatar />
+
               {profile.name && (
                 <form.AppField
                   name="name"

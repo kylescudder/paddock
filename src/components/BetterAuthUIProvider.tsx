@@ -6,7 +6,7 @@ import { passkeyPlugin } from "@/lib/auth/passkey-plugin";
 import { emailOtpPlugin } from "@/lib/auth/email-otp-plugin";
 import { magicLinkPlugin } from "@/lib/auth/magic-link-plugin";
 import { authClient } from "@/lib/auth-client";
-import { profileFields } from "@/lib/profile-ui";
+import { profileAvatar, profileFields } from "@/lib/profile-ui";
 import { adminHome, safeAppPath } from "@/lib/auth/safe-path";
 
 export function BetterAuthUIProvider({
@@ -37,6 +37,7 @@ export function BetterAuthUIProvider({
         requireEmailVerification: true,
       }}
       additionalFields={profileFields}
+      avatar={profileAvatar}
       localization={{ auth: { name: "Display name" } }}
       plugins={[emailOtpPlugin(), magicLinkPlugin(), passkeyPlugin()]}
     >

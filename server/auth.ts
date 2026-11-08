@@ -3,9 +3,18 @@ import { connection } from "./database.ts";
 import * as schema from "./schema.ts";
 import { readAuthEnv, readAuthProvider } from "./auth-env.ts";
 import { createPaddockAuth, type PaddockAuth } from "./auth-factory.ts";
-import { sendLinkEmail, sendLoginEmail } from "./auth-email.ts";
+import {
+  sendLinkEmail,
+  sendLoginEmail,
+  type AuthDatabase,
+} from "./auth-email.ts";
+import { createProfileHandler } from "./profile.ts";
 
-export type AuthAccess = { auth: PaddockAuth; allowedEmails: string[] };
+export type AuthAccess = {
+  auth: PaddockAuth;
+  allowedEmails: string[];
+  database: AuthDatabase;
+};
 
 // Paths the app forwards to Better Auth. Everything else is a 404, and so is
 // every path while Clerk is the selected provider.
@@ -53,8 +62,9 @@ export function betterAuth(): Promise<AuthAccess> {
     const mail = env.BREVO_API_KEY
       ? { apiKey: env.BREVO_API_KEY, from: env.AUTH_EMAIL_FROM! }
       : null;
+    const database = drizzle({ client: await connection(), schema });
     const auth = createPaddockAuth(
-      drizzle({ client: await connection(), schema }),
+      database,
       {
         baseURL: origin,
         secret: env.BETTER_AUTH_SECRET!,
@@ -70,7 +80,7 @@ export function betterAuth(): Promise<AuthAccess> {
         if (mail) await sendLinkEmail(mail, origin, email, kind, url);
       },
     );
-    return { auth, allowedEmails: env.AUTH_ALLOWED_EMAILS };
+    return { auth, allowedEmails: env.AUTH_ALLOWED_EMAILS, database };
   })().catch((error) => {
     slot.__paddockAuth = undefined;
     throw error;
@@ -102,4 +112,25 @@ export async function authHandler(request: Request) {
     statusText: response.statusText,
     headers,
   });
+}
+
+// The signed-in owner's profile photo. 404 while Clerk is selected.
+export async function profileHandler(request: Request) {
+  if (readAuthProvider() !== "better-auth")
+    return Response.json({ error: "Not found" }, { status: 404 });
+  let access: AuthAccess;
+  try {
+    access = await betterAuth();
+  } catch {
+    return Response.json(
+      { error: "Sign-in is not configured on the host." },
+      { status: 503 },
+    );
+  }
+  const { auth, allowedEmails, database } = access;
+  return createProfileHandler(database, {
+    origin: readAuthEnv().BETTER_AUTH_URL!,
+    allowedEmails,
+    getSession: (headers) => auth.api.getSession({ headers }),
+  })(request);
 }

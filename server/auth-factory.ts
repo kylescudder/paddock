@@ -16,6 +16,7 @@ import {
   type LinkEmailKind,
 } from "./auth-email.ts";
 import { isAllowedEmail, isVerifiedAllowedUser } from "./auth-policy.ts";
+import { currentAvatarUrl } from "./profile.ts";
 
 const hasUnsafeCharacters = (value: string) =>
   [...value].some((character) => {
@@ -35,8 +36,9 @@ export function isSameSiteTarget(target: unknown, origin: string) {
   return url.origin === origin && !url.pathname.startsWith("//");
 }
 
-// Display name plus optional first/last names. Email, verification and image
-// changes are refused: the verified email is the identity and access key.
+// Display name plus optional first/last names. Email and verification changes
+// are refused: the verified email is the identity and access key. `image` may
+// only confirm the server-owned value set by /api/profile/avatar.
 const names = z
   .strictObject({
     name: z.string().trim().min(1).max(120).optional(),
@@ -54,6 +56,7 @@ const names = z
       .nullable()
       .transform((value) => value ?? "")
       .optional(),
+    image: z.string().max(200).nullable().optional(),
   })
   .refine((value) => Object.keys(value).length > 0);
 
@@ -199,6 +202,16 @@ export function createPaddockAuth(
           if (!parsed.success)
             throw new APIError("BAD_REQUEST", {
               message: "Invalid profile update",
+            });
+          // The photo endpoint already stored the new value; anything else
+          // (another user's photo, an outside URL, a data URL) is refused.
+          if (
+            parsed.data.image !== undefined &&
+            parsed.data.image !==
+              (await currentAvatarUrl(database, session!.user.id))
+          )
+            throw new APIError("BAD_REQUEST", {
+              message: "Upload or remove your profile photo first",
             });
           Object.assign(ctx.body, parsed.data);
         }

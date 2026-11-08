@@ -71,11 +71,12 @@ test("adopts the legacy schema without touching rows, tables or old migration co
   await sql`INSERT INTO studio_versions VALUES ('candidate', 'monaco:2026', '/candidate.png', 'v2', 'generated', NULL, 'feedback', 'prompt', 'model', '2026-10-30T10:00:00Z')`;
   await sql`INSERT INTO studio_drafts VALUES ('monaco:2026', 'candidate', '{"title":"#ffffff"}', '2026-10-30T10:00:00Z')`;
   async function contents() {
-    // Later additive migrations (Better Auth's auth_* tables) are new tables;
-    // every legacy table, row and identity must be untouched.
+    // Later additive migrations (Better Auth's auth_* tables and the profile
+    // photo table) are new tables; every legacy table, row and identity must
+    // be untouched.
     const tables = await sql<
       { tablename: string }[]
-    >`SELECT tablename FROM pg_tables WHERE schemaname='public' AND left(tablename, 5) <> 'auth_' ORDER BY tablename`;
+    >`SELECT tablename FROM pg_tables WHERE schemaname='public' AND left(tablename, 5) <> 'auth_' AND tablename <> 'user_profile' ORDER BY tablename`;
     return Promise.all(
       tables.map(async ({ tablename }: { tablename: string }) => ({
         table: tablename,
@@ -92,6 +93,9 @@ test("adopts the legacy schema without touching rows, tables or old migration co
   const [auth] =
     await sql`SELECT count(*)::int AS count FROM pg_tables WHERE schemaname='public' AND left(tablename, 5) = 'auth_'`;
   assert.equal(auth.count, 7);
+  const [profile] =
+    await sql`SELECT to_regclass('public.user_profile')::text AS name`;
+  assert.equal(profile.name, "user_profile");
   assert.equal((await new Store(sql).settings()).monthlyGenerationLimit, 9);
   // A previous image may still run its idempotent migration during rollback.
   await legacyMigrate(sql);
@@ -188,6 +192,12 @@ test("non-superuser owner migrates while restricted runtime can use data but can
       const store = new Store(client);
       await store.set("runtime", { writable: true });
       assert.deepEqual(await store.get("runtime", null), { writable: true });
+      // New tables, such as the private profile photos, reach the runtime
+      // role through the host's default privileges; no migration grant needed.
+      const [photos] = await sql`SELECT
+        has_table_privilege(${runtime}, 'public.user_profile', 'SELECT,INSERT,UPDATE,DELETE') AS crud,
+        has_table_privilege(${runtime}, 'public.user_profile', 'TRUNCATE') AS truncate`;
+      assert.deepEqual(photos, { crud: true, truncate: false });
       await assert.rejects(client`SELECT * FROM drizzle.__drizzle_migrations`);
       await assert.rejects(
         client`INSERT INTO drizzle.__drizzle_migrations (hash) VALUES ('forged')`,

@@ -1,3 +1,5 @@
+import { avatarRequest, prepareAvatar } from "./profile";
+
 // Optional first/last names are Better Auth additional fields; the verified
 // email is shown read-only because it is the account's identity and access key.
 const name = (field: "givenName" | "familyName", label: string) => ({
@@ -23,3 +25,25 @@ export const profileFields = [
     copyable: true,
   },
 ];
+
+// Better Auth UI's avatar hooks, backed by Paddock's private photo endpoint.
+// Upload returns the server-owned image URL, which update-user then confirms.
+export const profileAvatar = {
+  enabled: true,
+  size: 512,
+  extension: "jpg" as const,
+  resize: async (file: File) =>
+    new File([await prepareAvatar(file)], "avatar.jpg", { type: "image/jpeg" }),
+  upload: async (file: File) => {
+    const { image } = await avatarRequest({
+      method: "PUT",
+      headers: { "Content-Type": "image/jpeg" },
+      body: file,
+    });
+    if (!image) throw new Error("The photo could not be uploaded.");
+    return image;
+  },
+  delete: async () => {
+    await avatarRequest({ method: "DELETE" });
+  },
+};

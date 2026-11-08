@@ -94,5 +94,7 @@ export const studioDrafts = pgTable("studio_drafts", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 });
 
-// Better Auth tables live in their own module and join the same Drizzle schema.
+// Better Auth and profile photo tables live in their own modules and join the
+// same Drizzle schema.
 export * from "./auth-schema.ts";
+export * from "./profile-schema.ts";
