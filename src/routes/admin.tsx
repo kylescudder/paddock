@@ -17,9 +17,7 @@ function Admin() {
     <App admin>
       {(notify) => (
         <AdminGate
-          authProvider={app.authProvider}
           authConfigured={app.authConfigured}
-          hasClerk={Boolean(app.clerkPublishableKey)}
           notify={notify}
           studio={studio}
           openStudio={(eventId) =>

@@ -1,6 +1,5 @@
 /*
-  Better Auth UI (shadcn, radix-nova) styles for the Better Auth provider only.
-  Loaded only when AUTH_PROVIDER=better-auth. Scoped so the rest of Paddock is
+  Better Auth UI (shadcn, radix-nova) styles. Scoped so the rest of Paddock is
   unaffected: no Tailwind preflight, utilities are generated only from the auth
   components, and the shadcn tokens use a `--ba-` prefix because Paddock's own
   stylesheet already defines `--border` and `--muted`. Utilities are unlayered

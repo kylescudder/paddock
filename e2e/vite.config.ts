@@ -168,11 +168,34 @@ useServices({
 });
 guardOverrides.current = {
   identity: () => ({ userId: "browser-fixture-owner", isAuthenticated: true }),
-  config: {
-    clerkPublishableKey: "",
-    clerkSecretKey: "",
-    appUrl: "http://localhost:4318",
-  },
+  config: { appUrl: "http://localhost:4318" },
+};
+// The browser's Better Auth session: a fixed signed-in owner. Identity never
+// leaves this fixture; the admin guard above uses the same fixed identity.
+const fixtureSession = () => {
+  const now = new Date().toISOString();
+  const expires = new Date(Date.now() + 3_600_000).toISOString();
+  return Response.json({
+    session: {
+      id: "browser-fixture-session",
+      userId: "browser-fixture-owner",
+      token: "fixture",
+      expiresAt: expires,
+      createdAt: now,
+      updatedAt: now,
+    },
+    user: {
+      id: "browser-fixture-owner",
+      name: "Fixture Owner",
+      givenName: "Fixture",
+      familyName: "Owner",
+      email: "owner@paddock.test",
+      emailVerified: true,
+      image: null,
+      createdAt: now,
+      updatedAt: now,
+    },
+  });
 };
 const handlers: Record<
   string,
@@ -220,9 +243,6 @@ export default mergeConfig(
   defineConfig({
     cacheDir: ".local/emby-selection/vite-cache",
     optimizeDeps: { exclude: ["bun"] },
-    resolve: {
-      alias: { "@clerk/tanstack-react-start": path.resolve("e2e/clerk.tsx") },
-    },
     server: {
       port: 4318,
       strictPort: true,
@@ -250,13 +270,15 @@ export default mergeConfig(
               const response =
                 url.pathname === "/api/library"
                   ? await library(request)
-                  : url.pathname === "/api/health"
-                    ? health()
-                    : handler
-                      ? await handler({ request })
-                      : dynamic
-                        ? await dynamic(request)
-                        : new Response(null, { status: 404 });
+                  : url.pathname === "/api/auth/get-session"
+                    ? fixtureSession()
+                    : url.pathname === "/api/health"
+                      ? health()
+                      : handler
+                        ? await handler({ request })
+                        : dynamic
+                          ? await dynamic(request)
+                          : new Response(null, { status: 404 });
               outgoing.writeHead(
                 response.status,
                 Object.fromEntries(response.headers),

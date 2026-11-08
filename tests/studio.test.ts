@@ -121,7 +121,7 @@ beforeEach(async () => {
   useServices({ store, artwork, router, emby, jobs, config } as Services);
   guardOverrides.current = {
     identity: () => ({ userId: "studio-owner", isAuthenticated: true }),
-    config: { clerkPublishableKey: "", clerkSecretKey: "", appUrl },
+    config: { appUrl },
   };
 });
 afterAll(async () => {

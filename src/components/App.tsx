@@ -6,9 +6,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Link, useNavigate, useRouteContext } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { SignIn, UserButton, useAuth } from "@clerk/tanstack-react-start";
 import {
   ArrowDownToLine,
   ArrowLeft,
@@ -62,8 +61,6 @@ const BetterAuthUserMenu = lazy(() =>
     default: BetterAuthUserMenu,
   })),
 );
-const useAuthProvider = () =>
-  useRouteContext({ from: "__root__" }).app.authProvider;
 
 const raceLabel = (event: LibraryEvent) =>
   event.name
@@ -125,7 +122,6 @@ export function App({
   admin: boolean;
   children: (notify: (text: string) => void) => ReactNode;
 }) {
-  const betterAuth = useAuthProvider() === "better-auth";
   const [toast, setToast] = useState("");
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const notify = (text: string) => {
@@ -140,14 +136,10 @@ export function App({
         <div className="topbar-middle">
           <span className="tiny-square" /> THE FORMULA 1 ARTWORK COLLECTION
         </div>
-        {betterAuth ? (
-          <div className="topbar-actions">
-            <AdminLink admin={admin} />
-            <BetterAuthAccount />
-          </div>
-        ) : (
+        <div className="topbar-actions">
           <AdminLink admin={admin} />
-        )}
+          <BetterAuthAccount />
+        </div>
       </header>
       {children(notify)}
       {toast && (
@@ -809,19 +801,14 @@ interface StudioRoute {
   openStudio: (eventId?: string) => void;
 }
 export function AdminGate({
-  authProvider,
   authConfigured,
-  hasClerk,
   notify,
   ...route
 }: {
-  authProvider: "clerk" | "better-auth";
   authConfigured: boolean;
-  hasClerk: boolean;
   notify: (text: string) => void;
 } & StudioRoute) {
-  const betterAuth = authProvider === "better-auth";
-  if (!authConfigured || (!betterAuth && !hasClerk))
+  if (!authConfigured)
     return (
       <main className="setup-page">
         <div className="setup-icon">
@@ -834,9 +821,8 @@ export function AdminGate({
           Your controls.
         </h1>
         <p>
-          {betterAuth
-            ? "The public library is ready. Finish the sign-in settings on the host to unlock settings, generation, and Emby sync."
-            : "The public library is ready. Connect your Clerk account on the host to unlock settings, generation, and Emby sync."}
+          The public library is ready. Finish the sign-in settings on the host
+          to unlock settings, generation, and Emby sync.
         </p>
         <div className="setup-checklist">
           <span>
@@ -858,11 +844,7 @@ export function AdminGate({
         </Link>
       </main>
     );
-  return betterAuth ? (
-    <BetterAuthAdmin notify={notify} {...route} />
-  ) : (
-    <AuthenticatedAdmin notify={notify} {...route} />
-  );
+  return <BetterAuthAdmin notify={notify} {...route} />;
 }
 // Better Auth: signed-out owners go to the sign-in page and come back here.
 function BetterAuthAdmin({
@@ -920,64 +902,11 @@ function BetterAuthAdmin({
     </div>
   );
 }
-function AuthenticatedAdmin({
-  notify,
-  ...route
-}: { notify: (text: string) => void } & StudioRoute) {
-  const { isLoaded, isSignedIn } = useAuth();
-  const [owner, setOwner] = useState(false);
-  const [error, setError] = useState("");
-  useEffect(() => {
-    if (isLoaded && isSignedIn)
-      request("/api/admin/me")
-        .then(() => setOwner(true))
-        .catch((error) => setError(errorMessage(error)));
-  }, [isLoaded, isSignedIn]);
-  if (!isLoaded)
-    return (
-      <div className="library-loading">
-        <LoaderCircle className="spin" />
-        Loading your workspace…
-      </div>
-    );
-  if (!isSignedIn)
-    return (
-      <main className="sign-in-page">
-        <div className="eyebrow">OWNER WORKSPACE</div>
-        <h1>Welcome back.</h1>
-        <p>Sign in with your approved account to manage Paddock.</p>
-        <SignIn routing="hash" forceRedirectUrl="/admin" />
-      </main>
-    );
-  if (error)
-    return (
-      <main className="setup-page">
-        <LockKeyhole size={30} />
-        <h1>This workspace is private.</h1>
-        <p>{error}</p>
-        <UserButton />
-        <Link className="text-link" to="/">
-          Return to the collection <ArrowRight size={15} />
-        </Link>
-      </main>
-    );
-  return owner ? (
-    <Admin notify={notify} account={<UserButton />} {...route} />
-  ) : (
-    <div className="library-loading">
-      <LoaderCircle className="spin" />
-      Checking owner access…
-    </div>
-  );
-}
-
 function Admin({
   notify,
-  account,
   studio,
   openStudio,
-}: { notify: (text: string) => void; account?: ReactNode } & StudioRoute) {
-  const betterAuth = useAuthProvider() === "better-auth";
+}: { notify: (text: string) => void } & StudioRoute) {
   const [status, setStatus] = useState<AdminStatus | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [error, setError] = useState("");
@@ -1133,7 +1062,6 @@ function Admin({
           <h1>Keep the collection moving.</h1>
           <p>One calendar. Your models. Everything in its place.</p>
         </div>
-        {account}
       </div>
       <div className="admin-tabs">
         <button
@@ -1454,9 +1382,8 @@ function Admin({
             <div className="owner-note">
               <LockKeyhole size={16} />
               <p>
-                {betterAuth
-                  ? "Only approved accounts can change settings, generate artwork, or update Emby."
-                  : "Only your configured Clerk account can change settings, generate artwork, or update Emby."}
+                Only approved accounts can change settings, generate artwork, or
+                update Emby.
               </p>
             </div>
           </div>

@@ -120,12 +120,7 @@ async function signIn(fixture: Fixture, email = "owner@thescudders.test") {
 async function adminMe(fixture: Fixture, cookie: string, method = "GET") {
   guardOverrides.current = {
     betterAuth: async () => fixture.access,
-    config: {
-      authProvider: "better-auth",
-      clerkPublishableKey: "",
-      clerkSecretKey: "",
-      appUrl: origin,
-    },
+    config: { appUrl: origin },
   };
   useServices({} as Services);
   try {
@@ -759,9 +754,8 @@ test("profile photos are bounded, re-encoded, private to their owner and removab
   );
 });
 
-test("the app's auth route forwards only allowlisted endpoints, and nothing while Clerk is selected", async () => {
+test("the app's auth route forwards only allowlisted endpoints", async () => {
   const keys = [
-    "AUTH_PROVIDER",
     "BETTER_AUTH_URL",
     "BETTER_AUTH_SECRET",
     "AUTH_ALLOWED_EMAILS",
@@ -794,7 +788,6 @@ test("the app's auth route forwards only allowlisted endpoints, and nothing whil
   try {
     await authFixture();
     Object.assign(process.env, {
-      AUTH_PROVIDER: "clerk",
       BETTER_AUTH_URL: origin,
       BETTER_AUTH_SECRET: secret,
       AUTH_ALLOWED_EMAILS: "owner@thescudders.test",
@@ -803,18 +796,6 @@ test("the app's auth route forwards only allowlisted endpoints, and nothing whil
     delete process.env.BREVO_API_KEY;
     delete process.env.AUTH_EMAIL_FROM;
     delete process.env.DATABASE_PASSWORD_FILE;
-    // Clerk (the default and rollback) exposes none of Better Auth.
-    for (const path of ["/get-session", "/sign-in/email", "/sign-up/email"])
-      assert.equal(
-        (await call(path, path === "/get-session" ? "GET" : "POST")).status,
-        404,
-        path,
-      );
-    // Nor the profile photo endpoint.
-    for (const method of ["GET", "PUT", "DELETE"])
-      assert.equal((await photo(method)).status, 404, method);
-
-    process.env.AUTH_PROVIDER = "better-auth";
     for (const path of [
       "/sign-up/email",
       "/email-otp/get-verification-otp",
@@ -854,15 +835,12 @@ test("the app's auth route forwards only allowlisted endpoints, and nothing whil
   }
 });
 
-test("Better Auth settings are validated by name and required only when selected", () => {
-  assert.equal(readAuthEnv({}).AUTH_PROVIDER, "clerk");
-  assert.throws(() => readAuthEnv({ AUTH_PROVIDER: "auth0" }), /AUTH_PROVIDER/);
+test("Better Auth settings are validated by name", () => {
   assert.throws(
-    () => readAuthEnv({ AUTH_PROVIDER: "better-auth" }),
+    () => readAuthEnv({}),
     /BETTER_AUTH_URL, BETTER_AUTH_SECRET, AUTH_ALLOWED_EMAILS/,
   );
   const local = {
-    AUTH_PROVIDER: "better-auth",
     BETTER_AUTH_URL: "http://localhost:3922",
     BETTER_AUTH_SECRET: secret,
     AUTH_ALLOWED_EMAILS: " Owner@TheScudders.test, second@thescudders.test ",
@@ -871,6 +849,11 @@ test("Better Auth settings are validated by name and required only when selected
     "owner@thescudders.test",
     "second@thescudders.test",
   ]);
+  // Settings left over from the removed provider switch are ignored.
+  assert.deepEqual(
+    readAuthEnv({ ...local, AUTH_PROVIDER: "retired" }).AUTH_ALLOWED_EMAILS,
+    ["owner@thescudders.test", "second@thescudders.test"],
+  );
   assert.throws(
     () => readAuthEnv({ ...local, AUTH_ALLOWED_EMAILS: "not-an-email" }),
     /AUTH_ALLOWED_EMAILS/,
@@ -908,12 +891,7 @@ test("an unconfigured Better Auth keeps the owner workspace closed", async () =>
     betterAuth: async () => {
       throw new Error("Invalid environment variables: BETTER_AUTH_SECRET");
     },
-    config: {
-      authProvider: "better-auth",
-      clerkPublishableKey: "pk_test_unused",
-      clerkSecretKey: "sk_test_unused",
-      appUrl: origin,
-    },
+    config: { appUrl: origin },
   };
   useServices({} as Services);
   try {

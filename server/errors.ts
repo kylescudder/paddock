@@ -14,7 +14,6 @@ export const redactSecrets = (error: unknown) =>
   safeError(error, [
     config.openrouterKey,
     config.embyKey,
-    config.clerkSecretKey,
     process.env.BETTER_AUTH_SECRET || "",
     process.env.BREVO_API_KEY || "",
   ]);

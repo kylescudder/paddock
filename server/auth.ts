@@ -1,7 +1,7 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import { connection } from "./database.ts";
 import * as schema from "./schema.ts";
-import { readAuthEnv, readAuthProvider } from "./auth-env.ts";
+import { readAuthEnv } from "./auth-env.ts";
 import { createPaddockAuth, type PaddockAuth } from "./auth-factory.ts";
 import {
   sendLinkEmail,
@@ -16,8 +16,7 @@ export type AuthAccess = {
   database: AuthDatabase;
 };
 
-// Paths the app forwards to Better Auth. Everything else is a 404, and so is
-// every path while Clerk is the selected provider.
+// Paths the app forwards to Better Auth. Everything else is a 404.
 const paths = new Set([
   "/get-session",
   "/sign-out",
@@ -56,8 +55,6 @@ const slot = globalThis as unknown as {
 export function betterAuth(): Promise<AuthAccess> {
   slot.__paddockAuth ??= (async () => {
     const env = readAuthEnv();
-    if (env.AUTH_PROVIDER !== "better-auth")
-      throw new Error("Better Auth is not enabled");
     const origin = env.BETTER_AUTH_URL!;
     const mail = env.BREVO_API_KEY
       ? { apiKey: env.BREVO_API_KEY, from: env.AUTH_EMAIL_FROM! }
@@ -89,10 +86,7 @@ export function betterAuth(): Promise<AuthAccess> {
 }
 
 export async function authHandler(request: Request) {
-  if (
-    readAuthProvider() !== "better-auth" ||
-    !isForwardedAuthPath(new URL(request.url).pathname)
-  )
+  if (!isForwardedAuthPath(new URL(request.url).pathname))
     return new Response("Not found", { status: 404 });
   let access: AuthAccess;
   try {
@@ -114,10 +108,8 @@ export async function authHandler(request: Request) {
   });
 }
 
-// The signed-in owner's profile photo. 404 while Clerk is selected.
+// The signed-in owner's profile photo.
 export async function profileHandler(request: Request) {
-  if (readAuthProvider() !== "better-auth")
-    return Response.json({ error: "Not found" }, { status: 404 });
   let access: AuthAccess;
   try {
     access = await betterAuth();
