@@ -4,6 +4,10 @@ import postgres from "postgres";
 import { SQL as LegacySQL } from "bun";
 import { migrate as legacyMigrate } from "./fixtures/legacy-schema.ts";
 import { Store } from "../server/db.ts";
+import journal from "../drizzle/meta/_journal.json";
+
+// Every committed migration is recorded once (baseline, then additive changes).
+const migrationCount = journal.entries.length;
 
 const url =
   process.env.TEST_DATABASE_URL ||
@@ -50,7 +54,7 @@ test("fresh database migrates once and retains settings on repeat", async () => 
   });
   const [row] =
     await sql`SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations`;
-  assert.equal(row.count, 1);
+  assert.equal(row.count, migrationCount);
 }, 30000);
 
 // Independent copy of the pre-Drizzle DDL at audited main, not generated SQL.
@@ -67,9 +71,12 @@ test("adopts the legacy schema without touching rows, tables or old migration co
   await sql`INSERT INTO studio_versions VALUES ('candidate', 'monaco:2026', '/candidate.png', 'v2', 'generated', NULL, 'feedback', 'prompt', 'model', '2026-10-30T10:00:00Z')`;
   await sql`INSERT INTO studio_drafts VALUES ('monaco:2026', 'candidate', '{"title":"#ffffff"}', '2026-10-30T10:00:00Z')`;
   async function contents() {
+    // Later additive migrations (Better Auth's auth_* tables and the profile
+    // photo table) are new tables; every legacy table, row and identity must
+    // be untouched.
     const tables = await sql<
       { tablename: string }[]
-    >`SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename`;
+    >`SELECT tablename FROM pg_tables WHERE schemaname='public' AND left(tablename, 5) <> 'auth_' AND tablename <> 'user_profile' ORDER BY tablename`;
     return Promise.all(
       tables.map(async ({ tablename }: { tablename: string }) => ({
         table: tablename,
@@ -83,6 +90,12 @@ test("adopts the legacy schema without touching rows, tables or old migration co
   const result = await migrate();
   assert.equal(result.code, 0, result.output);
   assert.deepEqual(await contents(), before);
+  const [auth] =
+    await sql`SELECT count(*)::int AS count FROM pg_tables WHERE schemaname='public' AND left(tablename, 5) = 'auth_'`;
+  assert.equal(auth.count, 7);
+  const [profile] =
+    await sql`SELECT to_regclass('public.user_profile')::text AS name`;
+  assert.equal(profile.name, "user_profile");
   assert.equal((await new Store(sql).settings()).monthlyGenerationLimit, 9);
   // A previous image may still run its idempotent migration during rollback.
   await legacyMigrate(sql);
@@ -129,7 +142,7 @@ test("rejects unknown migration history and serializes concurrent migration comm
   assert.match(result.output, /history differs/);
   const [row] =
     await sql`SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations`;
-  assert.equal(row.count, 1);
+  assert.equal(row.count, migrationCount);
 }, 30000);
 
 test("non-superuser owner migrates while restricted runtime can use data but cannot access metadata or migrate", async () => {
@@ -179,6 +192,12 @@ test("non-superuser owner migrates while restricted runtime can use data but can
       const store = new Store(client);
       await store.set("runtime", { writable: true });
       assert.deepEqual(await store.get("runtime", null), { writable: true });
+      // New tables, such as the private profile photos, reach the runtime
+      // role through the host's default privileges; no migration grant needed.
+      const [photos] = await sql`SELECT
+        has_table_privilege(${runtime}, 'public.user_profile', 'SELECT,INSERT,UPDATE,DELETE') AS crud,
+        has_table_privilege(${runtime}, 'public.user_profile', 'TRUNCATE') AS truncate`;
+      assert.deepEqual(photos, { crud: true, truncate: false });
       await assert.rejects(client`SELECT * FROM drizzle.__drizzle_migrations`);
       await assert.rejects(
         client`INSERT INTO drizzle.__drizzle_migrations (hash) VALUES ('forged')`,

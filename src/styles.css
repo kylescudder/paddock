@@ -2367,3 +2367,49 @@ img {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+/* Better Auth only: the owner link and avatar menu share the topbar's end. */
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.account-placeholder {
+  display: block;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #222623;
+}
+.auth-page {
+  max-width: 440px;
+}
+.auth-page > .paddock-auth {
+  margin-top: 30px;
+}
+.auth-page > .auth-note {
+  margin-top: 24px;
+  font-size: 13px;
+  color: #99a68b;
+}
+.auth-page > .auth-note a {
+  color: #edece7;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.profile-page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 38px 20px 80px;
+}
+.profile-page > h1 {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 34px;
+  font-weight: 500;
+  letter-spacing: -1.3px;
+  margin: 12px 0 28px;
+}
+.profile-page .profile-note {
+  margin-top: 16px;
+  font-size: 13px;
+  color: #99a68b;
+}

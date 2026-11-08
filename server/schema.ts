@@ -93,3 +93,8 @@ export const studioDrafts = pgTable("studio_drafts", {
   colours: jsonb().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 });
+
+// Better Auth and profile photo tables live in their own modules and join the
+// same Drizzle schema.
+export * from "./auth-schema.ts";
+export * from "./profile-schema.ts";

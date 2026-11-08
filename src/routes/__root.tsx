@@ -9,12 +9,15 @@ import {
 } from "@tanstack/react-router";
 import { ClerkProvider } from "@clerk/tanstack-react-start";
 import { getAppConfig } from "../lib/config";
+import { Toaster } from "@/components/ui/sonner";
 import appCss from "../styles.css?url";
+import authCss from "../auth.css?url";
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   {
     beforeLoad: async () => ({ app: await getAppConfig() }),
-    head: () => ({
+    loader: ({ context }) => context.app,
+    head: ({ loaderData }) => ({
       meta: [
         { charSet: "utf-8" },
         { name: "viewport", content: "width=device-width, initial-scale=1.0" },
@@ -28,6 +31,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       ],
       links: [
         { rel: "stylesheet", href: appCss },
+        // Better Auth UI styles load only when that provider is selected.
+        ...(loaderData?.authProvider === "better-auth"
+          ? [{ rel: "stylesheet", href: authCss }]
+          : []),
         { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
       ],
     }),
@@ -56,7 +63,12 @@ function RootComponent() {
         <HeadContent />
       </head>
       <body>
-        {app.clerkPublishableKey ? (
+        {app.authProvider === "better-auth" ? (
+          <>
+            {content}
+            <Toaster />
+          </>
+        ) : app.clerkPublishableKey ? (
           <ClerkProvider
             publishableKey={app.clerkPublishableKey}
             afterSignOutUrl="/"

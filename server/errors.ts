@@ -15,6 +15,8 @@ export const redactSecrets = (error: unknown) =>
     config.openrouterKey,
     config.embyKey,
     config.clerkSecretKey,
+    process.env.BETTER_AUTH_SECRET || "",
+    process.env.BREVO_API_KEY || "",
   ]);
 export function errorResponse(error: unknown) {
   const message =
