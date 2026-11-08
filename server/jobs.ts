@@ -132,7 +132,7 @@ export class Jobs {
       throw new Error("Generation is disabled for archived weekends.");
     if (!this.enabled || !this.inferenceReady)
       throw new Error(
-        "Configure Clerk sign-in and OPENROUTER_API_KEY before generating.",
+        "Configure sign-in and OPENROUTER_API_KEY before generating.",
       );
     if (!(await this.store.settings()).modelId)
       throw new Error("Choose an image-generation model in Settings first.");
@@ -240,7 +240,7 @@ export class Jobs {
   // Tells the studio whether image requests can run, without spending anything.
   async generationStatus() {
     const reason = !this.enabled
-      ? "Configure Clerk sign-in before generating."
+      ? "Configure sign-in before generating."
       : !this.inferenceReady
         ? "Add OPENROUTER_API_KEY on the host to generate images."
         : !(await this.store.settings()).modelId

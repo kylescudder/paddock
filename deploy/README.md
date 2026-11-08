@@ -41,7 +41,7 @@ cd /Users/kyle/platform/apps/paddock
 python3 -B deploy/bootstrap-host.py <host LocalHostName>
 ```
 
-The bootstrap is resumable. It creates private directories and a signing secret, sends that secret to the repository's `production` environment through stdin, starts the receiver, and prepares the receiver; register the app centrally. It preserves existing private files. It creates `.env` with blank integration credentials; copy the approved Clerk, OpenRouter, and Emby configuration from the host's existing secret store when permissions are ready. Until the Clerk keys are set, every admin endpoint is denied and no automatic inference runs. The public gallery works without integration keys.
+The bootstrap is resumable. It creates private directories and a signing secret, sends that secret to the repository's `production` environment through stdin, starts the receiver, and prepares the receiver; register the app centrally. It preserves existing private files. It creates `.env` with a generated `BETTER_AUTH_SECRET` and blank integration credentials; set `AUTH_ALLOWED_EMAILS` and the Brevo sender (see [Better Auth sign-in](#better-auth-sign-in)), and copy the approved OpenRouter and Emby configuration from the host's existing secret store when permissions are ready. Until sign-in is configured, every admin endpoint is denied and no automatic inference runs. The public gallery works without integration keys.
 
 ## Cloudflare
 
@@ -192,27 +192,12 @@ foundation. Future migrations must remain additive and compatible with the prior
 image. Do not run an older Drizzle release’s migrator against a newer migration
 history: the prefix check deliberately refuses unknown history.
 
-## Better Auth rollout and Clerk rollback
+## Better Auth sign-in
 
-`AUTH_PROVIDER` selects exactly one sign-in provider for both the server and the
-rendered client. It defaults to `clerk`, so this additive release can be deployed
-before the owner sign-in changes. Changing it requires recreating the app
-container; do not try to hot-swap its process environment. With `clerk`, the
-owner workspace, Clerk's sign-in and account menu are unchanged, and every
-`/api/auth/*` path returns 404.
-
-The owner migration `0001_better_auth` adds `auth_user`, `auth_session`,
-`auth_account`, `auth_verification`, `auth_passkey`, `auth_rate_limit` and
-`auth_email_limit`. It does not alter or rewrite any existing table. Paddock keeps
-no per-user data (every signed-in owner administers the same library), so there
-are no Clerk user IDs to link: access is the email allowlist itself. Runtime CRUD
-on the new tables uses the existing `paddock_runtime` role through the host's
-public-table default privileges and the existing four-connection pool.
-
-Prepare these settings in the host's protected `.env`, retaining the Clerk keys:
+Better Auth is the only sign-in provider. Its settings are read at runtime from
+the host's protected `.env`, never at build time:
 
 ```dotenv
-AUTH_PROVIDER=clerk
 BETTER_AUTH_URL=https://paddock.thescudders.org
 BETTER_AUTH_SECRET=<stable, cryptographically random app-specific secret>
 AUTH_ALLOWED_EMAILS=<comma-separated owner emails>
@@ -221,37 +206,35 @@ AUTH_EMAIL_FROM=paddock@thescudders.org
 AUTH_EMAIL_DAILY_LIMIT=40
 ```
 
-These are required only when `better-auth` is selected; a missing or invalid
-value is reported by name (never value) and keeps the owner workspace closed.
-In production `BETTER_AUTH_URL` must be `https://`, and the passkey RP ID is its
-exact hostname. Generate a secret of at least 32 characters and keep it stable
-across releases. Keep it and the sending API key out of Git, image layers and CI.
-Use a sender address on a domain verified in Brevo.
+A missing or invalid value is reported by name (never value) and keeps the owner
+workspace closed; the public gallery still works. In production
+`BETTER_AUTH_URL` must be `https://`, and the passkey RP ID is its exact hostname.
+Generate a secret of at least 32 characters and keep it stable across releases;
+changing it signs everyone out. Keep it and the sending API key out of Git, image
+layers and CI. Use a sender address on a domain verified in Brevo. After
+changing these settings, recreate only the `web` service with the same image
+(`docker compose --env-file .env up -d --no-deps web`); do not try to hot-swap
+its process environment. Unrecognised variables in `.env` are ignored.
+
+The owner migration `0001_better_auth` adds `auth_user`, `auth_session`,
+`auth_account`, `auth_verification`, `auth_passkey`, `auth_rate_limit` and
+`auth_email_limit`, separate from the library tables. Paddock keeps no per-user
+data (every signed-in owner administers the same library): access is the email
+allowlist itself. Runtime CRUD on these tables uses the existing
+`paddock_runtime` role through the host's public-table default privileges and
+the existing four-connection pool.
 
 Access model: there is no sign-up. Only addresses in `AUTH_ALLOWED_EMAILS`
 (trimmed, lowercased) can get an account, which is created the first time they
 sign in by email code or magic link. Every protected API also requires that the
 session's email is verified and still on the list, so removing an address revokes
-existing sessions on the next request. Each owner proves email ownership again;
-Clerk identities are not imported.
+existing sessions on the next request.
 
-Cutover:
-
-1. Deploy the image through the normal attested release with `AUTH_PROVIDER=clerk`
-   (or unset). The owner migration adds the auth tables; the existing acceptance
-   checks run as before.
-2. Add the settings above to the protected `.env`.
-3. Set `AUTH_PROVIDER=better-auth` and recreate only the `web` service with the
-   same image (`docker compose --env-file .env up -d --no-deps web`).
-4. Check the public gallery, signed-out `/admin` (redirects to `/auth/sign-in`),
-   email-code sign-in, the owner workspace, Profile → Set password → reset link
-   → password sign-in, and passkey enrollment and sign-in on a real device.
-
-Rollback: set `AUTH_PROVIDER=clerk` and recreate only the `web` service with the
-same image. Keep the Clerk keys, its production instance and DNS available until
-Better Auth has been in use for a while. The retained previous image is another
-rollback option. Leave the additive auth tables in place; never restore an older
-database just to change providers.
+After a deploy or settings change, check the public gallery, signed-out `/admin`
+(redirects to `/auth/sign-in`), email-code sign-in, the owner workspace, Profile
+→ Set password → reset link → password sign-in, and passkey enrollment and
+sign-in on a real device. The retained previous image is the rollback; leave the
+auth tables in place and never restore an older database to undo a release.
 
 Sign-in lives at `/auth/<view>` with four methods that link to each other:
 password (`/auth/sign-in`, the default), email code (`/auth/email-otp`), magic link
@@ -271,7 +254,7 @@ verified allowlisted session and the exact app `Origin`.
 Profile photos: migration `0002_profile` adds `user_profile` (one row per
 `auth_user`, removed with it). `GET`/`PUT`/`DELETE /api/profile/avatar` act only
 on the signed-in owner's own photo and need a verified, still-allowlisted email
-(and the exact `Origin` for changes); with Clerk selected the path is a 404.
+(and the exact `Origin` for changes).
 Uploads are JPEG, PNG or WebP up to 2 MiB, checked by signature, decoded by
 `sharp` (already in the image for gallery uploads) with a pixel bound, resized to
 a 256 px square and re-encoded as JPEG, which drops EXIF/GPS and other metadata.

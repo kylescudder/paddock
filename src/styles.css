@@ -1083,14 +1083,6 @@ img {
   padding: 45px 20px;
   margin: 30px auto;
 }
-.sign-in-page .cl-rootBox {
-  margin-top: 30px;
-  width: 100%;
-}
-.sign-in-page .cl-cardBox {
-  width: 100%;
-  max-width: 100%;
-}
 .admin-main {
   max-width: 1220px;
   margin: 0 auto;

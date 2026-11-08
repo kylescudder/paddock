@@ -30,7 +30,7 @@ def main():
         secret.chmod(0o600)
     runtime = APP / '.env'
     if not runtime.exists():
-        runtime.write_text('APP_URL=https://paddock.thescudders.org\nPADDOCK_DATA_DIR=./data\nCLERK_PUBLISHABLE_KEY=\nCLERK_SECRET_KEY=\nOPENROUTER_API_KEY=\nEMBY_URL=\nEMBY_API_KEY=\n')
+        runtime.write_text(f'APP_URL=https://paddock.thescudders.org\nPADDOCK_DATA_DIR=./data\nBETTER_AUTH_URL=https://paddock.thescudders.org\nBETTER_AUTH_SECRET={secrets.token_hex(32)}\nAUTH_ALLOWED_EMAILS=\nBREVO_API_KEY=\nAUTH_EMAIL_FROM=\nOPENROUTER_API_KEY=\nEMBY_URL=\nEMBY_API_KEY=\n')
         runtime.chmod(0o600)
     hook = APP / '.env.deploy-hook'
     if not hook.exists():

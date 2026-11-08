@@ -454,11 +454,7 @@ test("admin routes deny anonymous users and cross-origin mutations before any in
     config,
   } as unknown as Services);
   guardOverrides.current = {
-    config: {
-      clerkPublishableKey: "pk_test_fixture",
-      clerkSecretKey: "sk_test_fixture",
-      appUrl: "https://paddock.thescudders.org",
-    },
+    config: { appUrl: "https://paddock.thescudders.org" },
     identity: (request) => {
       const userId = request.headers.get("x-test-user");
       return { userId: userId || null, isAuthenticated: Boolean(userId) };
@@ -504,15 +500,14 @@ test("admin routes deny anonymous users and cross-origin mutations before any in
     f.close();
   }
 });
-test("without Clerk keys all admin APIs fail closed", async () => {
+test("without sign-in settings all admin APIs fail closed", async () => {
   const f = await fixture();
   useServices({ store: f.store, config } as unknown as Services);
   guardOverrides.current = {
-    config: {
-      clerkPublishableKey: "",
-      clerkSecretKey: "",
-      appUrl: "https://paddock.thescudders.org",
+    betterAuth: async () => {
+      throw new Error("Invalid environment variables: BETTER_AUTH_SECRET");
     },
+    config: { appUrl: "https://paddock.thescudders.org" },
   };
   try {
     const response = await owner.status({
@@ -602,11 +597,7 @@ test("Emby selection persists a show and inspects only its episodes across seaso
   } as unknown as Services);
   guardOverrides.current = {
     identity: () => ({ userId: "fixture-owner", isAuthenticated: true }),
-    config: {
-      clerkPublishableKey: "",
-      clerkSecretKey: "",
-      appUrl: "https://paddock.test",
-    },
+    config: { appUrl: "https://paddock.test" },
   };
   const request = (route: string, body?: unknown) => ({
     request: new Request(

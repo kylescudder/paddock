@@ -23,7 +23,7 @@ export default defineConfig({
   webServer: {
     cwd: path.resolve(import.meta.dirname, ".."),
     command:
-      "CLERK_PUBLISHABLE_KEY=pk_test_Zml4dHVyZS5jbGVyay5hY2NvdW50cy5kZXYk CLERK_SECRET_KEY=fixture bunx --bun vite --config e2e/vite.config.ts --configLoader native",
+      "BETTER_AUTH_URL=http://localhost:4318 BETTER_AUTH_SECRET=fixture-secret-fixture-secret-fixture AUTH_ALLOWED_EMAILS=owner@paddock.test bunx --bun vite --config e2e/vite.config.ts --configLoader native",
     url: "http://localhost:4318/api/health",
     reuseExistingServer: false,
     timeout: 60000,

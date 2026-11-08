@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Navigate, createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@better-auth-ui/react";
 import { LoaderCircle } from "lucide-react";
@@ -15,9 +15,6 @@ import { Button } from "@/components/ui/button";
 export const Route = createFileRoute("/profile")({ component: ProfilePage });
 
 function ProfilePage() {
-  const { app } = Route.useRouteContext();
-  // Clerk mode keeps Clerk's own account menu in the owner workspace.
-  if (app.authProvider !== "better-auth") return <Navigate to="/admin" />;
   return (
     <App admin>
       {() => (

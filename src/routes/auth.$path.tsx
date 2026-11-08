@@ -6,10 +6,7 @@ import { BetterAuthUIProvider } from "@/components/BetterAuthUIProvider";
 export const Route = createFileRoute("/auth/$path")({ component: AuthPage });
 
 function AuthPage() {
-  const { app } = Route.useRouteContext();
   const { path } = Route.useParams();
-  // Clerk keeps its own sign-in in the owner workspace; these are Better Auth only.
-  if (app.authProvider !== "better-auth") return <Navigate to="/admin" />;
   // Accounts are never self-registered: only allowlisted emails can sign in.
   if (path === "sign-up")
     return <Navigate to="/auth/$path" params={{ path: "sign-in" }} replace />;

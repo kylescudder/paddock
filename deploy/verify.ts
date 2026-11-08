@@ -97,7 +97,7 @@ try {
     fail("SVG master is not sandboxed vector artwork");
   await request("/images/1900/nowhere/race.png", 404);
 
-  // Owner APIs must refuse anonymous callers, whether or not Clerk is configured yet.
+  // Owner APIs must refuse anonymous callers, whether or not sign-in is configured yet.
   for (const path of ["/api/admin/status", "/api/admin/models"]) {
     const response = await fetch(origin + path, {
       signal: AbortSignal.timeout(15000),

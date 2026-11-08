@@ -9,8 +9,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
-// Better Auth tables. Separate and additive: switching AUTH_PROVIDER back to
-// Clerk never requires removing them or restoring an older library database.
+// Better Auth tables, kept separate from the library tables.
 export const authUser = pgTable("auth_user", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),

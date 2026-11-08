@@ -30,27 +30,11 @@ const validation = {
   },
 };
 
-const provider = z.enum(["clerk", "better-auth"]).default("clerk");
-export type AuthProvider = z.infer<typeof provider>;
-
-// Selects exactly one provider for the server and the rendered client. Clerk
-// stays the default, so an unset value keeps the existing behaviour.
-export function readAuthProvider(
-  runtimeEnv: RuntimeEnv = process.env,
-): AuthProvider {
-  return createEnv({
-    server: { AUTH_PROVIDER: provider },
-    runtimeEnv,
-    ...validation,
-  }).AUTH_PROVIDER;
-}
-
 // Better Auth settings are read at runtime (never during the secret-free
-// build) and are only required when Better Auth is selected.
+// build). Unknown variables are ignored.
 export function readAuthEnv(runtimeEnv: RuntimeEnv = process.env) {
   const env = createEnv({
     server: {
-      AUTH_PROVIDER: provider,
       BETTER_AUTH_URL: origin.optional(),
       BETTER_AUTH_SECRET: z.string().min(32).optional(),
       BREVO_API_KEY: z.string().min(1).optional(),
@@ -76,7 +60,6 @@ export function readAuthEnv(runtimeEnv: RuntimeEnv = process.env) {
     runtimeEnv,
     ...validation,
   });
-  if (env.AUTH_PROVIDER !== "better-auth") return env;
   const production = env.NODE_ENV === "production";
   // Mail delivery may be left unset only outside production (local checks).
   const required = production
