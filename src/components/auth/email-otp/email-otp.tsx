@@ -1,57 +1,57 @@
-"use client";
+'use client'
 
 import {
   authMutationKeys,
   authQueryKeys,
-  validateEmailAddress,
-} from "@better-auth-ui/core";
-import type { EmailOtpAuthClient } from "@better-auth-ui/core/plugins/email-otp";
-import { useAuth, useAuthPlugin, useFetchOptions } from "@better-auth-ui/react";
+  validateEmailAddress
+} from '@better-auth-ui/core'
+import type { EmailOtpAuthClient } from '@better-auth-ui/core/plugins/email-otp'
+import { useAuth, useAuthPlugin, useFetchOptions } from '@better-auth-ui/react'
 import {
   useSendVerificationOtp,
-  useSignInEmailOtp,
-} from "@better-auth-ui/react/plugins/email-otp";
-import { useSelector } from "@tanstack/react-form";
-import { useIsMutating, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useId, useRef, useState } from "react";
+  useSignInEmailOtp
+} from '@better-auth-ui/react/plugins/email-otp'
+import { useSelector } from '@tanstack/react-form'
+import { useIsMutating, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useId, useRef, useState } from 'react'
 
-import { Button } from "@/components/ui/button";
+import { Button } from '@/components/ui/button'
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  CardTitle
+} from '@/components/ui/card'
 import {
   Field,
   FieldDescription,
   FieldGroup,
-  FieldLabel,
-} from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { emailOtpPlugin } from "@/lib/auth/email-otp-plugin";
+  FieldLabel
+} from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { emailOtpPlugin } from '@/lib/auth/email-otp-plugin'
 import {
   clearPendingSignIn,
   emailCodeLifetime,
   readPendingSignIn,
-  savePendingSignIn,
-} from "@/lib/pending-sign-in";
-import { cn } from "cn";
+  savePendingSignIn
+} from '@/lib/pending-sign-in'
+import { cn } from 'cn'
 import {
   clearAuthFormServerError,
   isAuthFormFieldInvalid,
   runAuthFormAction,
   setAuthFormServerError,
-  useAuthForm,
-} from "../auth-form";
-import { OtpField } from "../otp-field";
-import { ReauthenticationNotice } from "../reauthentication";
+  useAuthForm
+} from '../auth-form'
+import { OtpField } from '../otp-field'
+import { ReauthenticationNotice } from '../reauthentication'
 
 export type EmailOtpProps = {
-  className?: string;
-  sessionPending?: boolean;
-};
+  className?: string
+  sessionPending?: boolean
+}
 
 /**
  * Passwordless sign-in with an emailed one-time code.
@@ -64,65 +64,63 @@ export type EmailOtpProps = {
  * request time are persisted; entering all six digits never submits by itself.
  */
 export function EmailOtp({ className, sessionPending = false }: EmailOtpProps) {
-  const emailErrorId = useId();
-  const { authClient, redirectTo, navigate, localization, plugins } = useAuth();
+  const emailErrorId = useId()
+  const { authClient, redirectTo, navigate, localization, plugins } = useAuth()
   const { localization: emailOtpLocalization, otpLength } =
-    useAuthPlugin(emailOtpPlugin);
+    useAuthPlugin(emailOtpPlugin)
 
-  const { fetchOptions, resetCaptcha } = useFetchOptions();
+  const { fetchOptions, resetCaptcha } = useFetchOptions()
   const Captcha = plugins.find(
-    (plugin) => plugin.captchaComponent,
-  )?.captchaComponent;
-  const otpClient = authClient as EmailOtpAuthClient;
-  const queryClient = useQueryClient();
-  const requestedAt = useRef(0);
-  const sending = useRef(false);
-  const [sentAt, setSentAt] = useState<number | null>(null);
-  const [now, setNow] = useState(Date.now);
-  const codeSent = sentAt !== null;
+    (plugin) => plugin.captchaComponent
+  )?.captchaComponent
+  const otpClient = authClient as EmailOtpAuthClient
+  const queryClient = useQueryClient()
+  const requestedAt = useRef(0)
+  const sending = useRef(false)
+  const [sentAt, setSentAt] = useState<number | null>(null)
+  const [now, setNow] = useState(Date.now)
+  const codeSent = sentAt !== null
   const cooldown =
-    sentAt === null
-      ? 0
-      : Math.max(0, Math.ceil((sentAt + 60_000 - now) / 1000));
-  const isCoolingDown = cooldown > 0;
+    sentAt === null ? 0 : Math.max(0, Math.ceil((sentAt + 60_000 - now) / 1000))
+  const isCoolingDown = cooldown > 0
 
   const { mutateAsync: sendVerificationOtp, isPending: isSending } =
     useSendVerificationOtp(otpClient, {
       onError: () => resetCaptcha(),
       onSuccess: () => {
-        resetCaptcha();
-        const email = form.state.values.email.trim().toLowerCase();
-        form.setFieldValue("email", email);
-        form.setFieldValue("code", "");
-        savePendingSignIn({ email, sentAt: requestedAt.current });
-        setSentAt(requestedAt.current);
-        setNow(Date.now());
-      },
-    });
+        resetCaptcha()
+        const email = form.state.values.email.trim().toLowerCase()
+        form.setFieldValue('email', email)
+        form.setFieldValue('code', '')
+        savePendingSignIn({ email, sentAt: requestedAt.current })
+        setSentAt(requestedAt.current)
+        setNow(Date.now())
+      }
+    })
 
   const { mutateAsync: signInEmailOtp, isPending: isSigningIn } =
     useSignInEmailOtp(otpClient, {
       onError: () => {
-        resetCaptcha();
+        resetCaptcha()
       },
       onSuccess: async () => {
-        clearPendingSignIn();
+        clearPendingSignIn()
         await queryClient.invalidateQueries(
           { queryKey: authQueryKeys.session },
-          { cancelRefetch: false },
-        );
-        navigate({ to: redirectTo });
-      },
-    });
+          { cancelRefetch: false }
+        )
+        navigate({ to: redirectTo })
+      }
+    })
 
   const signInMutating = useIsMutating({
-    mutationKey: authMutationKeys.signIn.all,
-  });
+    mutationKey: authMutationKeys.signIn.all
+  })
   const signUpMutating = useIsMutating({
-    mutationKey: authMutationKeys.signUp.all,
-  });
+    mutationKey: authMutationKeys.signUp.all
+  })
   const isPending =
-    sessionPending || signInMutating + signUpMutating > 0 || isSending;
+    sessionPending || signInMutating + signUpMutating > 0 || isSending
 
   const sendCode = async () => {
     if (
@@ -130,113 +128,113 @@ export function EmailOtp({ className, sessionPending = false }: EmailOtpProps) {
       sending.current ||
       (sentAt !== null && Date.now() - sentAt < 60_000)
     )
-      return;
-    sending.current = true;
-    requestedAt.current = Date.now();
+      return
+    sending.current = true
+    requestedAt.current = Date.now()
     try {
       await sendVerificationOtp({
         email: form.state.values.email.trim().toLowerCase(),
-        type: "sign-in",
-        fetchOptions,
-      });
+        type: 'sign-in',
+        fetchOptions
+      })
     } finally {
-      sending.current = false;
+      sending.current = false
     }
-  };
+  }
 
   const form = useAuthForm({
-    defaultValues: { code: "", email: "" },
+    defaultValues: { code: '', email: '' },
     onSubmit: async ({ value }) => {
-      if (isPending || isSigningIn) return;
-      if (!codeSent) return await sendCode();
+      if (isPending || isSigningIn) return
+      if (!codeSent) return await sendCode()
       if (Date.now() - sentAt >= emailCodeLifetime) {
-        expireCode();
-        return;
+        expireCode()
+        return
       }
-      if (value.code.length !== otpLength) return;
+      if (value.code.length !== otpLength) return
       try {
         await signInEmailOtp({
           email: value.email.trim().toLowerCase(),
           otp: value.code,
-          fetchOptions,
-        });
+          fetchOptions
+        })
       } catch {
         setAuthFormServerError(
           form,
-          "That code could not be verified. Check the code or request a new one.",
-          "Unable to sign in. Please try again.",
-        );
+          'That code could not be verified. Check the code or request a new one.',
+          'Unable to sign in. Please try again.'
+        )
       }
-    },
-  });
+    }
+  })
 
   function expireCode() {
-    clearPendingSignIn();
-    setSentAt(null);
-    form.setFieldValue("code", "");
+    clearPendingSignIn()
+    setSentAt(null)
+    form.setFieldValue('code', '')
     setAuthFormServerError(
       form,
-      "That code has expired. Request a new code to continue.",
-      "Unable to sign in. Please try again.",
-    );
+      'That code has expired. Request a new code to continue.',
+      'Unable to sign in. Please try again.'
+    )
   }
 
   useEffect(() => {
-    const pending = readPendingSignIn();
-    if (!pending) return;
-    form.setFieldValue("email", pending.email);
-    setSentAt(pending.sentAt);
-    setNow(Date.now());
-  }, [form]);
+    const pending = readPendingSignIn()
+    if (!pending) return
+    form.setFieldValue('email', pending.email)
+    setSentAt(pending.sentAt)
+    setNow(Date.now())
+  }, [form])
 
   useEffect(() => {
-    if (sentAt === null) return;
-    const updateClock = () => setNow(Date.now());
-    const timer = setInterval(updateClock, 1000);
-    window.addEventListener("focus", updateClock);
-    document.addEventListener("visibilitychange", updateClock);
+    if (sentAt === null) return
+    const updateClock = () => setNow(Date.now())
+    const timer = setInterval(updateClock, 1000)
+    window.addEventListener('focus', updateClock)
+    document.addEventListener('visibilitychange', updateClock)
     return () => {
-      clearInterval(timer);
-      window.removeEventListener("focus", updateClock);
-      document.removeEventListener("visibilitychange", updateClock);
-    };
-  }, [sentAt]);
+      clearInterval(timer)
+      window.removeEventListener('focus', updateClock)
+      document.removeEventListener('visibilitychange', updateClock)
+    }
+  }, [sentAt])
 
   useEffect(() => {
-    if (sentAt === null || now - sentAt < emailCodeLifetime) return;
-    clearPendingSignIn();
-    setSentAt(null);
-    form.setFieldValue("code", "");
+    if (sentAt === null || now - sentAt < emailCodeLifetime) return
+    clearPendingSignIn()
+    setSentAt(null)
+    form.setFieldValue('code', '')
     setAuthFormServerError(
       form,
-      "That code has expired. Request a new code to continue.",
-      "Unable to sign in. Please try again.",
-    );
-  }, [form, now, sentAt]);
+      'That code has expired. Request a new code to continue.',
+      'Unable to sign in. Please try again.'
+    )
+  }, [form, now, sentAt])
 
   const codeComplete = useSelector(
     form.store,
-    (state) => state.values.code.length === otpLength,
-  );
-  const email = useSelector(form.store, (state) => state.values.email);
+    (state) => state.values.code.length === otpLength
+  )
+  const email = useSelector(form.store, (state) => state.values.email)
 
   return (
-    <Card className={cn("w-full max-w-sm", className)}>
+    <Card className={cn('w-full max-w-sm', className)}>
       <ReauthenticationNotice />
       <CardHeader>
-        <CardTitle className="text-xl">Owner sign-in</CardTitle>
+        <CardTitle className='text-xl'>Owner sign-in</CardTitle>
 
         <CardDescription>
           {codeSent
             ? `If ${email} can manage Paddock, a code is on its way. It expires in 10 minutes.`
-            : "Enter your approved email and we’ll send you a six-digit code."}
+            : 'Enter your approved email and we’ll send you a six-digit code.'}
         </CardDescription>
       </CardHeader>
 
       <CardContent>
-        <div className="flex flex-col gap-6">
+        <div className='flex flex-col gap-6'>
           {sessionPending && (
-            <p role="status" className="text-muted-foreground text-sm">
+            <p role='status' className='text-muted-foreground text-sm'>
               Checking sign-in…
             </p>
           )}
@@ -244,7 +242,7 @@ export function EmailOtp({ className, sessionPending = false }: EmailOtpProps) {
             <form.AuthFormRoot noValidate>
               <FieldGroup>
                 {codeSent ? (
-                  <form.AppField name="code">
+                  <form.AppField name='code'>
                     {(field) => (
                       <OtpField
                         autoFocus
@@ -259,24 +257,24 @@ export function EmailOtp({ className, sessionPending = false }: EmailOtpProps) {
                   </form.AppField>
                 ) : (
                   <form.AppField
-                    name="email"
+                    name='email'
                     validators={{
                       onChange: ({ value }) =>
                         validateEmailAddress(value, {
                           invalidMessage: localization.auth.invalidEmail,
-                          requiredMessage: localization.auth.fieldRequired,
-                        }),
+                          requiredMessage: localization.auth.fieldRequired
+                        })
                     }}
                   >
                     {(field) => (
                       <Field
                         data-invalid={isAuthFormFieldInvalid(field.state.meta)}
                       >
-                        <FieldLabel htmlFor="email">
+                        <FieldLabel htmlFor='email'>
                           {localization.auth.email}
                         </FieldLabel>
                         <Input
-                          id="email"
+                          id='email'
                           aria-describedby={
                             isAuthFormFieldInvalid(field.state.meta)
                               ? emailErrorId
@@ -284,10 +282,10 @@ export function EmailOtp({ className, sessionPending = false }: EmailOtpProps) {
                           }
                           name={field.name}
                           aria-invalid={isAuthFormFieldInvalid(
-                            field.state.meta,
+                            field.state.meta
                           )}
-                          type="email"
-                          autoComplete="email webauthn"
+                          type='email'
+                          autoComplete='email webauthn'
                           maxLength={254}
                           value={field.state.value}
                           onBlur={field.handleBlur}
@@ -307,10 +305,10 @@ export function EmailOtp({ className, sessionPending = false }: EmailOtpProps) {
                 <form.AuthFormServerError />
 
                 {Captcha && (
-                  <div className="flex justify-center">{Captcha}</div>
+                  <div className='flex justify-center'>{Captcha}</div>
                 )}
 
-                <div className="flex flex-col gap-3">
+                <div className='flex flex-col gap-3'>
                   <form.AuthFormSubmitButton
                     isPending={isSending || isSigningIn}
                     disabled={
@@ -325,28 +323,28 @@ export function EmailOtp({ className, sessionPending = false }: EmailOtpProps) {
                   {codeSent ? (
                     <>
                       <Button
-                        type="button"
-                        variant="outline"
+                        type='button'
+                        variant='outline'
                         disabled={isPending || isSigningIn || isCoolingDown}
                         onClick={() => void runAuthFormAction(form, sendCode)}
                       >
                         {isCoolingDown
                           ? localization.auth.resendIn.replace(
-                              "{{seconds}}",
-                              String(cooldown),
+                              '{{seconds}}',
+                              String(cooldown)
                             )
                           : localization.auth.resend}
                       </Button>
 
                       <Button
-                        type="button"
-                        variant="ghost"
+                        type='button'
+                        variant='ghost'
                         disabled={isPending || isSigningIn}
                         onClick={() => {
-                          clearPendingSignIn();
-                          setSentAt(null);
-                          clearAuthFormServerError(form);
-                          form.setFieldValue("code", "");
+                          clearPendingSignIn()
+                          setSentAt(null)
+                          clearAuthFormServerError(form)
+                          form.setFieldValue('code', '')
                         }}
                       >
                         {emailOtpLocalization.useDifferentEmail}
@@ -357,9 +355,9 @@ export function EmailOtp({ className, sessionPending = false }: EmailOtpProps) {
                     (plugin.authButtons ?? []).map((AuthButton, index) => (
                       <AuthButton
                         key={`${plugin.id}-${index.toString()}`}
-                        view="emailOtp"
+                        view='emailOtp'
                       />
-                    )),
+                    ))
                   )}
                 </div>
               </FieldGroup>
@@ -367,11 +365,11 @@ export function EmailOtp({ className, sessionPending = false }: EmailOtpProps) {
           </form.AppForm>
         </div>
 
-        <FieldDescription className="mt-6">
+        <FieldDescription className='mt-6'>
           Signed in before? Save a passkey or set a password in Profile for next
           time.
         </FieldDescription>
       </CardContent>
     </Card>
-  );
+  )
 }

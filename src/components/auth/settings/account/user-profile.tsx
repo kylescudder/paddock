@@ -1,31 +1,31 @@
-"use client";
+'use client'
 
 import {
   fieldsWithModelValues,
   getAdditionalFieldDefaultValues,
   getAdditionalFieldSubmitValues,
-  validateStringLength,
-} from "@better-auth-ui/core";
-import type { UsernameAuthClient } from "@better-auth-ui/core/plugins/username";
-import { useAuth, useSession, useUpdateUser } from "@better-auth-ui/react";
-import { useEffect, useMemo, useRef } from "react";
-import { toast } from "sonner";
+  validateStringLength
+} from '@better-auth-ui/core'
+import type { UsernameAuthClient } from '@better-auth-ui/core/plugins/username'
+import { useAuth, useSession, useUpdateUser } from '@better-auth-ui/react'
+import { useEffect, useMemo, useRef } from 'react'
+import { toast } from 'sonner'
 
-import { Card, CardContent, CardFooter } from "@/components/ui/card";
-import { Field, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "cn";
+import { Card, CardContent, CardFooter } from '@/components/ui/card'
+import { Field, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
+import { cn } from 'cn'
 import {
   getAuthAdditionalFieldValidators,
   isAuthFormFieldInvalid,
-  useAuthForm,
-} from "../../auth-form";
-import { ChangeAvatar } from "./change-avatar";
+  useAuthForm
+} from '../../auth-form'
+import { ChangeAvatar } from './change-avatar'
 
 export type UserProfileProps = {
-  className?: string;
-};
+  className?: string
+}
 
 /**
  * Render a profile card that lets the authenticated user view and update their profile photo, display name and first/last names.
@@ -34,101 +34,97 @@ export type UserProfileProps = {
  * @returns A JSX element containing the profile card with avatar upload and editable name fields
  */
 export function UserProfile({ className }: UserProfileProps) {
-  const previousUserId = useRef<string | null>(null);
+  const previousUserId = useRef<string | null>(null)
   const { additionalFields, authClient, avatar, localization, profile } =
-    useAuth<UsernameAuthClient>();
-  const { data: session } = useSession(authClient);
+    useAuth<UsernameAuthClient>()
+  const { data: session } = useSession(authClient)
 
   const { mutateAsync: updateUser, isPending } = useUpdateUser(authClient, {
-    onSuccess: () => toast.success(localization.settings.profileUpdatedSuccess),
-  });
+    onSuccess: () => toast.success(localization.settings.profileUpdatedSuccess)
+  })
 
   const profileFields = useMemo(
     () => additionalFields?.filter((field) => field.profile !== false) ?? [],
-    [additionalFields],
-  );
+    [additionalFields]
+  )
   const hasProfileFields =
-    profile.name || profileFields.some((field) => field.inputType !== "hidden");
+    profile.name || profileFields.some((field) => field.inputType !== 'hidden')
   const form = useAuthForm({
     defaultValues: {
       additionalFields: getAdditionalFieldDefaultValues(profileFields),
-      name: "",
+      name: ''
     },
     onSubmit: async ({ value }) => {
       await updateUser({
         ...(profile.name && { name: value.name }),
-        ...getAdditionalFieldSubmitValues(
-          profileFields,
-          value.additionalFields,
-        ),
-      });
+        ...getAdditionalFieldSubmitValues(profileFields, value.additionalFields)
+      })
       // keepDefaultValues: useAuthForm re-applies its blank defaultValues on
       // every render, so replacing them here would blank the form once the
       // component next re-renders.
-      form.reset(value, { keepDefaultValues: true });
-    },
-  });
+      form.reset(value, { keepDefaultValues: true })
+    }
+  })
 
   useEffect(() => {
-    if (!session) return;
+    if (!session) return
     // Preserve unfinished edits when focus refreshes or avatar changes update
     // the session. A different account must always get its own form values.
-    if (previousUserId.current === session.user.id && form.state.isDirty)
-      return;
-    previousUserId.current = session.user.id;
+    if (previousUserId.current === session.user.id && form.state.isDirty) return
+    previousUserId.current = session.user.id
     form.reset(
       {
         additionalFields: getAdditionalFieldDefaultValues(
           fieldsWithModelValues(
             profileFields,
-            session.user as Record<string, unknown>,
-          ),
+            session.user as Record<string, unknown>
+          )
         ),
-        name: session.user.name,
+        name: session.user.name
       },
-      { keepDefaultValues: true },
-    );
-  }, [form, form.state.isDirty, profileFields, session]);
+      { keepDefaultValues: true }
+    )
+  }, [form, form.state.isDirty, profileFields, session])
 
-  if (!avatar.enabled && !hasProfileFields) return null;
+  if (!avatar.enabled && !hasProfileFields) return null
 
   return (
     <div>
-      <h2 className="mb-3 text-sm font-semibold">
+      <h2 className='mb-3 text-sm font-semibold'>
         {localization.settings.userProfile}
       </h2>
 
       <form.AppForm>
         <form.AuthFormRoot>
           <Card className={cn(className)}>
-            <CardContent className="flex flex-col gap-6">
+            <CardContent className='flex flex-col gap-6'>
               <ChangeAvatar />
 
               {profile.name && (
                 <form.AppField
-                  name="name"
+                  name='name'
                   validators={{
                     onChange: ({ value }) =>
                       validateStringLength(value, {
                         requiredMessage: localization.auth.fieldRequired,
-                        trim: true,
-                      }),
+                        trim: true
+                      })
                   }}
                 >
                   {(field) => {
-                    const isInvalid = isAuthFormFieldInvalid(field.state.meta);
+                    const isInvalid = isAuthFormFieldInvalid(field.state.meta)
 
                     return (
                       <Field data-invalid={isInvalid}>
-                        <FieldLabel htmlFor="name">
+                        <FieldLabel htmlFor='name'>
                           {localization.auth.name}
                         </FieldLabel>
 
                         {session ? (
                           <Input
-                            id="name"
+                            id='name'
                             name={field.name}
-                            autoComplete="name"
+                            autoComplete='name'
                             placeholder={localization.auth.name}
                             disabled={isPending}
                             value={field.state.value}
@@ -140,28 +136,28 @@ export function UserProfile({ className }: UserProfileProps) {
                           />
                         ) : (
                           <Skeleton>
-                            <Input className="invisible" />
+                            <Input className='invisible' />
                           </Skeleton>
                         )}
 
                         <field.AuthFormFieldError />
                       </Field>
-                    );
+                    )
                   }}
                 </form.AppField>
               )}
 
               {profileFields.map((configuredField) => {
                 if (!session) {
-                  if (configuredField.inputType === "hidden") {
-                    return null;
+                  if (configuredField.inputType === 'hidden') {
+                    return null
                   }
 
                   return (
                     <Skeleton key={configuredField.name}>
-                      <Input className="invisible" />
+                      <Input className='invisible' />
                     </Skeleton>
-                  );
+                  )
                 }
 
                 return (
@@ -170,7 +166,7 @@ export function UserProfile({ className }: UserProfileProps) {
                     name={`additionalFields.${configuredField.name}`}
                     validators={getAuthAdditionalFieldValidators(
                       configuredField,
-                      localization.auth.fieldRequired,
+                      localization.auth.fieldRequired
                     )}
                   >
                     {(field) => (
@@ -180,14 +176,14 @@ export function UserProfile({ className }: UserProfileProps) {
                       />
                     )}
                   </form.AppField>
-                );
+                )
               })}
             </CardContent>
 
             {hasProfileFields && (
               <CardFooter>
                 <form.AuthFormSubmitButton
-                  size="sm"
+                  size='sm'
                   disabled={isPending || !session}
                 >
                   {localization.settings.saveChanges}
@@ -198,5 +194,5 @@ export function UserProfile({ className }: UserProfileProps) {
         </form.AuthFormRoot>
       </form.AppForm>
     </div>
-  );
+  )
 }

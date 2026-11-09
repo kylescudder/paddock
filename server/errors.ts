@@ -1,27 +1,27 @@
-import { z } from "zod";
-import { config } from "./config.ts";
+import { z } from 'zod'
+import { config } from './config.ts'
 
 // A problem with what was asked for, rather than a failure while doing it.
 export class RequestError extends Error {}
 export function safeError(error: unknown, secrets: string[]) {
   let message =
-    error instanceof Error ? error.message : "Something went wrong. Try again.";
+    error instanceof Error ? error.message : 'Something went wrong. Try again.'
   for (const secret of secrets)
-    if (secret) message = message.replaceAll(secret, "[redacted]");
-  return message.slice(0, 1000);
+    if (secret) message = message.replaceAll(secret, '[redacted]')
+  return message.slice(0, 1000)
 }
 export const redactSecrets = (error: unknown) =>
   safeError(error, [
     config.openrouterKey,
     config.embyKey,
-    process.env.BETTER_AUTH_SECRET || "",
-    process.env.BREVO_API_KEY || "",
-  ]);
+    process.env.BETTER_AUTH_SECRET || '',
+    process.env.BREVO_API_KEY || ''
+  ])
 export function errorResponse(error: unknown) {
   const message =
     error instanceof z.ZodError
-      ? "Some fields are invalid. Check your settings and try again."
-      : redactSecrets(error);
+      ? 'Some fields are invalid. Check your settings and try again.'
+      : redactSecrets(error)
   const status =
     error instanceof z.ZodError || error instanceof RequestError
       ? 400
@@ -29,6 +29,6 @@ export function errorResponse(error: unknown) {
         ? 409
         : /limit reached/.test(message)
           ? 429
-          : 500;
-  return Response.json({ error: message }, { status });
+          : 500
+  return Response.json({ error: message }, { status })
 }

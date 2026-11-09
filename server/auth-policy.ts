@@ -2,14 +2,14 @@
 // allowlist itself. Removing an address revokes access on the next request.
 export function isAllowedEmail(
   email: string,
-  allowedEmails: readonly string[],
+  allowedEmails: readonly string[]
 ) {
-  return allowedEmails.includes(email.trim().toLowerCase());
+  return allowedEmails.includes(email.trim().toLowerCase())
 }
 
 export function isVerifiedAllowedUser(
   user: { email: string; emailVerified: boolean } | null | undefined,
-  allowedEmails: readonly string[],
+  allowedEmails: readonly string[]
 ) {
-  return !!user?.emailVerified && isAllowedEmail(user.email, allowedEmails);
+  return !!user?.emailVerified && isAllowedEmail(user.email, allowedEmails)
 }

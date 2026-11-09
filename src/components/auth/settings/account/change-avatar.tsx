@@ -1,81 +1,80 @@
-import { fileToAvatarDataUrl } from "@better-auth-ui/core";
-import { useAuth, useSession, useUpdateUser } from "@better-auth-ui/react";
-import { Trash2, Upload } from "lucide-react";
-import { type ChangeEvent, useRef, useState } from "react";
-import { toast } from "sonner";
-import { UserAvatar } from "@/components/auth/user/user-avatar";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { fileToAvatarDataUrl } from '@better-auth-ui/core'
+import { useAuth, useSession, useUpdateUser } from '@better-auth-ui/react'
+import { Trash2, Upload } from 'lucide-react'
+import { type ChangeEvent, useRef, useState } from 'react'
+import { toast } from 'sonner'
+import { UserAvatar } from '@/components/auth/user/user-avatar'
+import { Button, buttonVariants } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Field, FieldLabel } from "@/components/ui/field";
-import { Spinner } from "@/components/ui/spinner";
-import { cn } from "cn";
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu'
+import { Field, FieldLabel } from '@/components/ui/field'
+import { Spinner } from '@/components/ui/spinner'
+import { cn } from 'cn'
 
 export type ChangeAvatarProps = {
-  className?: string;
-};
+  className?: string
+}
 
 export function ChangeAvatar({ className }: ChangeAvatarProps) {
-  const { authClient, localization, avatar } = useAuth();
-  const { data: session } = useSession(authClient);
+  const { authClient, localization, avatar } = useAuth()
+  const { data: session } = useSession(authClient)
 
   const { mutateAsync: updateUser, isPending: updatePending } =
-    useUpdateUser(authClient);
+    useUpdateUser(authClient)
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [isUploading, setIsUploading] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
-  const isPending = updatePending || isUploading || isDeleting;
+  const isPending = updatePending || isUploading || isDeleting
 
   async function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const file = e.target.files?.[0]
+    if (!file) return
 
-    e.target.value = "";
+    e.target.value = ''
 
-    setIsUploading(true);
+    setIsUploading(true)
 
     try {
       const resized =
-        (await avatar.resize?.(file, avatar.size, avatar.extension)) || file;
+        (await avatar.resize?.(file, avatar.size, avatar.extension)) || file
 
       const image =
-        (await avatar.upload?.(resized)) ||
-        (await fileToAvatarDataUrl(resized));
+        (await avatar.upload?.(resized)) || (await fileToAvatarDataUrl(resized))
 
       await updateUser(
         { image },
         {
           onSuccess: () =>
-            toast.success(localization.settings.avatarChangedSuccess),
-        },
-      );
+            toast.success(localization.settings.avatarChangedSuccess)
+        }
+      )
     } catch (error) {
-      console.error("[Better Auth UI] Image operation failed", error);
-      toast.error(localization.errors.imageUploadFailed);
+      console.error('[Better Auth UI] Image operation failed', error)
+      toast.error(localization.errors.imageUploadFailed)
     }
 
-    setIsUploading(false);
+    setIsUploading(false)
   }
 
   async function handleDelete() {
-    const currentImage = session?.user.image;
-    setIsDeleting(true);
+    const currentImage = session?.user.image
+    setIsDeleting(true)
     try {
       // The protected storage endpoint removes the photo first; update-user
       // then confirms only the resulting server-owned image value.
-      if (currentImage) await avatar.delete?.(currentImage);
-      await updateUser({ image: null });
-      toast.success(localization.settings.avatarDeletedSuccess);
+      if (currentImage) await avatar.delete?.(currentImage)
+      await updateUser({ image: null })
+      toast.success(localization.settings.avatarDeletedSuccess)
     } catch {
-      toast.error(localization.errors.imageUploadFailed);
+      toast.error(localization.errors.imageUploadFailed)
     } finally {
-      setIsDeleting(false);
+      setIsDeleting(false)
     }
   }
 
@@ -85,26 +84,26 @@ export function ChangeAvatar({ className }: ChangeAvatarProps) {
 
       <input
         ref={fileInputRef}
-        type="file"
-        accept="image/jpeg,image/png,image/webp"
-        className="hidden"
+        type='file'
+        accept='image/jpeg,image/png,image/webp'
+        className='hidden'
         onChange={handleFileChange}
       />
 
-      <div className="flex items-center gap-4">
+      <div className='flex items-center gap-4'>
         <Button
-          type="button"
-          variant="ghost"
-          className="h-auto w-auto rounded-full p-0"
+          type='button'
+          variant='ghost'
+          className='h-auto w-auto rounded-full p-0'
           disabled={isPending}
           onClick={() => fileInputRef.current?.click()}
         >
-          <UserAvatar className="size-12" isPending={isPending} />
+          <UserAvatar className='size-12' isPending={isPending} />
         </Button>
 
         <DropdownMenu>
           <DropdownMenuTrigger
-            className={cn(buttonVariants({ variant: "secondary", size: "sm" }))}
+            className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}
             disabled={!session || isPending}
           >
             {isPending && <Spinner />}
@@ -112,15 +111,15 @@ export function ChangeAvatar({ className }: ChangeAvatarProps) {
             {localization.settings.changeAvatar}
           </DropdownMenuTrigger>
 
-          <DropdownMenuContent className="min-w-fit">
+          <DropdownMenuContent className='min-w-fit'>
             <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
-              <Upload className="text-muted-foreground" />
+              <Upload className='text-muted-foreground' />
 
               {localization.settings.uploadAvatar}
             </DropdownMenuItem>
 
             <DropdownMenuItem
-              variant="destructive"
+              variant='destructive'
               disabled={!session?.user.image}
               onClick={handleDelete}
             >
@@ -132,5 +131,5 @@ export function ChangeAvatar({ className }: ChangeAvatarProps) {
         </DropdownMenu>
       </div>
     </Field>
-  );
+  )
 }

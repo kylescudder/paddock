@@ -1,36 +1,36 @@
 import {
   addPasskeyOptions,
   type AddPasskeyParams,
-  type PasskeyAuthClient,
-} from "@better-auth-ui/core/plugins/passkey";
-import { useSession } from "@better-auth-ui/react";
-import { useMutation } from "@tanstack/react-query";
+  type PasskeyAuthClient
+} from '@better-auth-ui/core/plugins/passkey'
+import { useSession } from '@better-auth-ui/react'
+import { useMutation } from '@tanstack/react-query'
 
 type AddPasskeyResult = Awaited<
-  ReturnType<PasskeyAuthClient["passkey"]["addPasskey"]>
->;
+  ReturnType<PasskeyAuthClient['passkey']['addPasskey']>
+>
 
 type PasskeyRequestErrorBody = {
-  code?: string;
-  message?: string;
-  status: number;
-  statusText: string;
-};
+  code?: string
+  message?: string
+  status: number
+  statusText: string
+}
 
 /** Same shape as better-fetch's `BetterFetchError`, so auth UI helpers read it. */
 export class PasskeyRequestError extends Error {
-  readonly status: number;
-  readonly statusText: string;
-  readonly error: PasskeyRequestErrorBody;
+  readonly status: number
+  readonly statusText: string
+  readonly error: PasskeyRequestErrorBody
 
   constructor(error: PasskeyRequestErrorBody) {
     super(error.message || error.statusText || String(error.status), {
-      cause: error,
-    });
-    this.name = "PasskeyRequestError";
-    this.status = error.status;
-    this.statusText = error.statusText;
-    this.error = error;
+      cause: error
+    })
+    this.name = 'PasskeyRequestError'
+    this.status = error.status
+    this.statusText = error.statusText
+    this.error = error
   }
 }
 
@@ -43,8 +43,8 @@ export class PasskeyRequestError extends Error {
  * mutation then "succeeds" and the dialog shows nothing.
  */
 export function useAddPasskey(authClient: PasskeyAuthClient) {
-  const { data: session } = useSession(authClient);
-  const { mutationKey, meta } = addPasskeyOptions(authClient, session?.user.id);
+  const { data: session } = useSession(authClient)
+  const { mutationKey, meta } = addPasskeyOptions(authClient, session?.user.id)
 
   return useMutation<
     AddPasskeyResult,
@@ -54,9 +54,9 @@ export function useAddPasskey(authClient: PasskeyAuthClient) {
     mutationKey,
     meta,
     mutationFn: async (params) => {
-      const result = await authClient.passkey.addPasskey(params);
-      if (result.error) throw new PasskeyRequestError(result.error);
-      return result;
-    },
-  });
+      const result = await authClient.passkey.addPasskey(params)
+      if (result.error) throw new PasskeyRequestError(result.error)
+      return result
+    }
+  })
 }

@@ -1,39 +1,39 @@
-import { createHmac } from "node:crypto";
-import { z } from "zod";
-import { betterAuth } from "better-auth";
+import { createHmac } from 'node:crypto'
+import { z } from 'zod'
+import { betterAuth } from 'better-auth'
 import {
   APIError,
   createAuthMiddleware,
-  getSessionFromCtx,
-} from "better-auth/api";
-import { emailOTP, magicLink } from "better-auth/plugins";
-import { drizzleAdapter } from "@better-auth/drizzle-adapter";
-import { passkey } from "@better-auth/passkey";
-import * as schema from "./auth-schema.ts";
+  getSessionFromCtx
+} from 'better-auth/api'
+import { emailOTP, magicLink } from 'better-auth/plugins'
+import { drizzleAdapter } from '@better-auth/drizzle-adapter'
+import { passkey } from '@better-auth/passkey'
+import * as schema from './auth-schema.ts'
 import {
   reserveEmailDelivery,
   type AuthDatabase,
-  type LinkEmailKind,
-} from "./auth-email.ts";
-import { isAllowedEmail, isVerifiedAllowedUser } from "./auth-policy.ts";
-import { currentAvatarUrl } from "./profile.ts";
+  type LinkEmailKind
+} from './auth-email.ts'
+import { isAllowedEmail, isVerifiedAllowedUser } from './auth-policy.ts'
+import { currentAvatarUrl } from './profile.ts'
 
 const hasUnsafeCharacters = (value: string) =>
   [...value].some((character) => {
-    const code = character.charCodeAt(0);
-    return code < 0x20 || code === 0x7f || character === "\\";
-  });
+    const code = character.charCodeAt(0)
+    return code < 0x20 || code === 0x7f || character === '\\'
+  })
 
 // Relative paths, or absolute URLs on this origin, only. Resolve against the
 // origin rather than inspecting the string: URL parsing strips tabs/newlines
 // and treats backslashes as slashes, so `/\t/evil.example` would escape a
 // prefix check. Control characters and backslashes are refused outright.
 export function isSameSiteTarget(target: unknown, origin: string) {
-  if (typeof target !== "string" || hasUnsafeCharacters(target)) return false;
-  if (!URL.canParse(target, origin)) return false;
-  const url = new URL(target, origin);
+  if (typeof target !== 'string' || hasUnsafeCharacters(target)) return false
+  if (!URL.canParse(target, origin)) return false
+  const url = new URL(target, origin)
   // Also refuse paths that normalise to `//host` (e.g. `/.//evil.example/`).
-  return url.origin === origin && !url.pathname.startsWith("//");
+  return url.origin === origin && !url.pathname.startsWith('//')
 }
 
 // Display name plus optional first/last names. Email and verification changes
@@ -47,47 +47,47 @@ const names = z
       .trim()
       .max(100)
       .nullable()
-      .transform((value) => value ?? "")
+      .transform((value) => value ?? '')
       .optional(),
     familyName: z
       .string()
       .trim()
       .max(100)
       .nullable()
-      .transform((value) => value ?? "")
+      .transform((value) => value ?? '')
       .optional(),
-    image: z.string().max(200).nullable().optional(),
+    image: z.string().max(200).nullable().optional()
   })
-  .refine((value) => Object.keys(value).length > 0);
+  .refine((value) => Object.keys(value).length > 0)
 
 export type AuthSettings = {
-  baseURL: string;
-  secret: string;
-  allowedEmails: readonly string[];
-  dailyEmailLimit: number;
-};
+  baseURL: string
+  secret: string
+  allowedEmails: readonly string[]
+  dailyEmailLimit: number
+}
 
 export type AuthUser = {
-  id: string;
-  email: string;
-  emailVerified: boolean;
-  name: string;
-};
+  id: string
+  email: string
+  emailVerified: boolean
+  name: string
+}
 
 export type PaddockAuth = {
-  handler: (request: Request) => Promise<Response>;
+  handler: (request: Request) => Promise<Response>
   api: {
     getSession: (input: {
-      headers: Headers;
-    }) => Promise<{ user: AuthUser } | null>;
-  };
-};
+      headers: Headers
+    }) => Promise<{ user: AuthUser } | null>
+  }
+}
 
 const unavailable = async () => {
-  throw new APIError("SERVICE_UNAVAILABLE", {
-    message: "The sign-in email could not be sent. Please try again later.",
-  });
-};
+  throw new APIError('SERVICE_UNAVAILABLE', {
+    message: 'The sign-in email could not be sent. Please try again later.'
+  })
+}
 
 export function createPaddockAuth(
   database: AuthDatabase,
@@ -96,35 +96,35 @@ export function createPaddockAuth(
   sendLink: (
     email: string,
     kind: LinkEmailKind,
-    url: string,
-  ) => Promise<void> = unavailable,
+    url: string
+  ) => Promise<void> = unavailable
 ): PaddockAuth {
-  const origin = new URL(settings.baseURL).origin;
-  const allowed = settings.allowedEmails;
+  const origin = new URL(settings.baseURL).origin
+  const allowed = settings.allowedEmails
   const publicPasskeyPaths = new Set([
-    "/passkey/generate-authenticate-options",
-    "/passkey/verify-authentication",
-  ]);
+    '/passkey/generate-authenticate-options',
+    '/passkey/verify-authentication'
+  ])
   const refuseCrossSite = (headers: Headers | undefined, strict = false) => {
-    const requestOrigin = headers?.get("origin");
+    const requestOrigin = headers?.get('origin')
     if (
       (strict
         ? requestOrigin !== origin
         : requestOrigin && requestOrigin !== origin) ||
-      headers?.get("sec-fetch-site") === "cross-site"
+      headers?.get('sec-fetch-site') === 'cross-site'
     )
-      throw new APIError("FORBIDDEN", {
-        message: "Cross-site request refused",
-      });
-  };
+      throw new APIError('FORBIDDEN', {
+        message: 'Cross-site request refused'
+      })
+  }
   const instance = betterAuth({
-    appName: "Paddock",
+    appName: 'Paddock',
     baseURL: origin,
-    basePath: "/api/auth",
+    basePath: '/api/auth',
     secret: settings.secret,
     trustedOrigins: [origin],
     database: drizzleAdapter(database, {
-      provider: "pg",
+      provider: 'pg',
       transaction: true,
       schema: {
         user: schema.authUser,
@@ -132,14 +132,14 @@ export function createPaddockAuth(
         account: schema.authAccount,
         verification: schema.authVerification,
         passkey: schema.authPasskey,
-        rateLimit: schema.authRateLimit,
-      },
+        rateLimit: schema.authRateLimit
+      }
     }),
     session: {
       expiresIn: 7 * 86400,
       updateAge: 86400,
       freshAge: 3600,
-      cookieCache: { enabled: false },
+      cookieCache: { enabled: false }
     },
     emailAndPassword: {
       enabled: true,
@@ -152,57 +152,57 @@ export function createPaddockAuth(
       resetPasswordTokenExpiresIn: 1800,
       revokeSessionsOnPasswordReset: true,
       async sendResetPassword({ user, url }) {
-        if (!isAllowedEmail(user.email, allowed)) return;
-        await sendLink(user.email, "reset-password", url);
-      },
+        if (!isAllowedEmail(user.email, allowed)) return
+        await sendLink(user.email, 'reset-password', url)
+      }
     },
     user: {
       changeEmail: { enabled: false },
       additionalFields: {
-        givenName: { type: "string", required: false, defaultValue: "" },
-        familyName: { type: "string", required: false, defaultValue: "" },
-      },
+        givenName: { type: 'string', required: false, defaultValue: '' },
+        familyName: { type: 'string', required: false, defaultValue: '' }
+      }
     },
     advanced: {
-      cookiePrefix: "paddock-auth",
-      useSecureCookies: origin.startsWith("https://"),
+      cookiePrefix: 'paddock-auth',
+      useSecureCookies: origin.startsWith('https://'),
       crossSubDomainCookies: { enabled: false },
-      defaultCookieAttributes: { httpOnly: true, sameSite: "lax", path: "/" },
+      defaultCookieAttributes: { httpOnly: true, sameSite: 'lax', path: '/' },
       // The origin has no public port; only Cloudflare's tunnel reaches Caddy.
       // Cloudflare replaces this header instead of trusting a client-sent value.
-      ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] },
+      ipAddress: { ipAddressHeaders: ['cf-connecting-ip'] }
     },
     rateLimit: {
       enabled: true,
-      storage: "database",
+      storage: 'database',
       window: 60,
       max: 60,
       customRules: {
-        "/email-otp/send-verification-otp": { window: 60, max: 3 },
-        "/sign-in/email-otp": { window: 60, max: 10 },
-        "/sign-in/email": { window: 60, max: 5 },
-        "/sign-in/magic-link": { window: 60, max: 3 },
-        "/magic-link/verify": { window: 60, max: 10 },
-        "/request-password-reset": { window: 60, max: 3 },
-        "/reset-password": { window: 60, max: 5 },
-        "/change-password": { window: 60, max: 5 },
-        "/passkey/*": { window: 60, max: 20 },
-      },
+        '/email-otp/send-verification-otp': { window: 60, max: 3 },
+        '/sign-in/email-otp': { window: 60, max: 10 },
+        '/sign-in/email': { window: 60, max: 5 },
+        '/sign-in/magic-link': { window: 60, max: 3 },
+        '/magic-link/verify': { window: 60, max: 10 },
+        '/request-password-reset': { window: 60, max: 3 },
+        '/reset-password': { window: 60, max: 5 },
+        '/change-password': { window: 60, max: 5 },
+        '/passkey/*': { window: 60, max: 20 }
+      }
     },
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
-        if (ctx.path === "/update-user") {
-          refuseCrossSite(ctx.headers, true);
-          const session = await getSessionFromCtx(ctx);
+        if (ctx.path === '/update-user') {
+          refuseCrossSite(ctx.headers, true)
+          const session = await getSessionFromCtx(ctx)
           if (!isVerifiedAllowedUser(session?.user, allowed))
-            throw new APIError("UNAUTHORIZED", {
-              message: "Sign in with an approved, verified email first",
-            });
-          const parsed = names.safeParse(ctx.body);
+            throw new APIError('UNAUTHORIZED', {
+              message: 'Sign in with an approved, verified email first'
+            })
+          const parsed = names.safeParse(ctx.body)
           if (!parsed.success)
-            throw new APIError("BAD_REQUEST", {
-              message: "Invalid profile update",
-            });
+            throw new APIError('BAD_REQUEST', {
+              message: 'Invalid profile update'
+            })
           // The photo endpoint already stored the new value; anything else
           // (another user's photo, an outside URL, a data URL) is refused.
           if (
@@ -210,93 +210,92 @@ export function createPaddockAuth(
             parsed.data.image !==
               (await currentAvatarUrl(database, session!.user.id))
           )
-            throw new APIError("BAD_REQUEST", {
-              message: "Upload or remove your profile photo first",
-            });
-          Object.assign(ctx.body, parsed.data);
+            throw new APIError('BAD_REQUEST', {
+              message: 'Upload or remove your profile photo first'
+            })
+          Object.assign(ctx.body, parsed.data)
         }
-        if (ctx.path === "/email-otp/send-verification-otp") {
-          refuseCrossSite(ctx.headers);
+        if (ctx.path === '/email-otp/send-verification-otp') {
+          refuseCrossSite(ctx.headers)
           const email =
-            typeof ctx.body?.email === "string"
+            typeof ctx.body?.email === 'string'
               ? ctx.body.email.trim().toLowerCase()
-              : "";
-          if (ctx.body?.type !== "sign-in")
-            throw new APIError("BAD_REQUEST", {
-              message: "Unsupported sign-in method",
-            });
+              : ''
+          if (ctx.body?.type !== 'sign-in')
+            throw new APIError('BAD_REQUEST', {
+              message: 'Unsupported sign-in method'
+            })
           // Same answer for every address, so the form never reveals who can
           // manage Paddock. Only allowed addresses reach the mailer.
           if (!isAllowedEmail(email, allowed))
-            return ctx.json({ success: true });
-          ctx.body.email = email;
+            return ctx.json({ success: true })
+          ctx.body.email = email
           if (
             !(await reserveEmailDelivery(
               database,
               email,
-              settings.dailyEmailLimit,
+              settings.dailyEmailLimit
             ))
           )
-            return ctx.json({ success: true });
+            return ctx.json({ success: true })
         }
         if (
-          ctx.path === "/sign-in/magic-link" ||
-          ctx.path === "/request-password-reset"
+          ctx.path === '/sign-in/magic-link' ||
+          ctx.path === '/request-password-reset'
         ) {
-          refuseCrossSite(ctx.headers);
+          refuseCrossSite(ctx.headers)
           // Emailed links may only return to this site.
           for (const key of [
-            "callbackURL",
-            "newUserCallbackURL",
-            "errorCallbackURL",
-            "redirectTo",
+            'callbackURL',
+            'newUserCallbackURL',
+            'errorCallbackURL',
+            'redirectTo'
           ]) {
-            const target: unknown = ctx.body?.[key];
+            const target: unknown = ctx.body?.[key]
             if (target !== undefined && !isSameSiteTarget(target, origin))
-              throw new APIError("FORBIDDEN", { message: "Invalid redirect" });
+              throw new APIError('FORBIDDEN', { message: 'Invalid redirect' })
           }
           const email =
-            typeof ctx.body?.email === "string"
+            typeof ctx.body?.email === 'string'
               ? ctx.body.email.trim().toLowerCase()
-              : "";
-          if (!isAllowedEmail(email, allowed))
-            return ctx.json({ status: true });
-          ctx.body.email = email;
+              : ''
+          if (!isAllowedEmail(email, allowed)) return ctx.json({ status: true })
+          ctx.body.email = email
           if (
             !(await reserveEmailDelivery(
               database,
               email,
-              settings.dailyEmailLimit,
+              settings.dailyEmailLimit
             ))
           )
-            return ctx.json({ status: true });
+            return ctx.json({ status: true })
         }
         if (
-          ctx.path.startsWith("/passkey/") &&
+          ctx.path.startsWith('/passkey/') &&
           !publicPasskeyPaths.has(ctx.path)
         ) {
-          const session = await getSessionFromCtx(ctx);
+          const session = await getSessionFromCtx(ctx)
           if (!isVerifiedAllowedUser(session?.user, allowed))
-            throw new APIError("UNAUTHORIZED", {
-              message: "Sign in with an approved, verified email first",
-            });
+            throw new APIError('UNAUTHORIZED', {
+              message: 'Sign in with an approved, verified email first'
+            })
         }
-      }),
+      })
     },
     databaseHooks: {
       user: {
         create: {
           before: async (user) => {
             if (!isAllowedEmail(user.email, allowed))
-              throw new APIError("FORBIDDEN", {
-                message: "This account is not approved for Paddock",
-              });
+              throw new APIError('FORBIDDEN', {
+                message: 'This account is not approved for Paddock'
+              })
             return {
-              data: { ...user, email: user.email.trim().toLowerCase() },
-            };
-          },
-        },
-      },
+              data: { ...user, email: user.email.trim().toLowerCase() }
+            }
+          }
+        }
+      }
     },
     plugins: [
       emailOTP({
@@ -305,48 +304,48 @@ export function createPaddockAuth(
         allowedAttempts: 5,
         storeOTP: {
           hash: async (otp) =>
-            createHmac("sha256", settings.secret)
-              .update("paddock-email-otp:" + otp)
-              .digest("hex"),
+            createHmac('sha256', settings.secret)
+              .update('paddock-email-otp:' + otp)
+              .digest('hex')
         },
         async sendVerificationOTP({ email, otp, type }) {
-          if (type !== "sign-in" || !isAllowedEmail(email, allowed))
-            throw new APIError("FORBIDDEN", {
-              message: "Unsupported sign-in request",
-            });
-          await sendOTP(email, otp);
-        },
+          if (type !== 'sign-in' || !isAllowedEmail(email, allowed))
+            throw new APIError('FORBIDDEN', {
+              message: 'Unsupported sign-in request'
+            })
+          await sendOTP(email, otp)
+        }
       }),
       magicLink({
         expiresIn: 600,
-        storeToken: "hashed",
+        storeToken: 'hashed',
         async sendMagicLink({ email, url }) {
           if (!isAllowedEmail(email, allowed))
-            throw new APIError("FORBIDDEN", {
-              message: "Unsupported sign-in request",
-            });
-          await sendLink(email, "magic-link", url);
-        },
+            throw new APIError('FORBIDDEN', {
+              message: 'Unsupported sign-in request'
+            })
+          await sendLink(email, 'magic-link', url)
+        }
       }),
       passkey({
         rpID: new URL(origin).hostname,
-        rpName: "Paddock",
+        rpName: 'Paddock',
         origin,
         registration: { requireSession: true },
         authenticatorSelection: {
-          residentKey: "required",
-          userVerification: "required",
-        },
-      }),
-    ],
-  });
+          residentKey: 'required',
+          userVerification: 'required'
+        }
+      })
+    ]
+  })
   // Keep the rest of the server dependent on the two operations it uses,
   // rather than exporting every plugin's generic endpoint types.
   return {
     handler: instance.handler,
     api: {
       getSession: (input) =>
-        instance.api.getSession(input) as Promise<{ user: AuthUser } | null>,
-    },
-  };
+        instance.api.getSession(input) as Promise<{ user: AuthUser } | null>
+    }
+  }
 }

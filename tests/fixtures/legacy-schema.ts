@@ -1,24 +1,24 @@
 // Frozen pre-Drizzle DDL from 6beb37088b81b8638b9c16dc0cfa63fb98694bf4.
 // Keep independent of the new schema and generated migrations.
-import type { Sql } from "postgres";
+import type { Sql } from 'postgres'
 
 // Idempotent, additive schema. Run by the owner role in `db:migrate` before the app starts.
 export async function migrate(sql: Sql) {
   await sql`CREATE TABLE IF NOT EXISTS state (
     key TEXT PRIMARY KEY,
     value JSONB NOT NULL
-  )`;
+  )`
   await sql`CREATE TABLE IF NOT EXISTS events (
     id TEXT PRIMARY KEY,
     season INTEGER NOT NULL,
     payload JSONB NOT NULL
-  )`;
-  await sql`CREATE INDEX IF NOT EXISTS events_season ON events (season)`;
+  )`
+  await sql`CREATE INDEX IF NOT EXISTS events_season ON events (season)`
   await sql`CREATE TABLE IF NOT EXISTS backgrounds (
     venue TEXT PRIMARY KEY,
     file TEXT NOT NULL,
     version TEXT NOT NULL
-  )`;
+  )`
   await sql`CREATE TABLE IF NOT EXISTS jobs (
     id TEXT PRIMARY KEY,
     kind TEXT NOT NULL,
@@ -27,15 +27,15 @@ export async function migrate(sql: Sql) {
     message TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
     finished_at TIMESTAMPTZ
-  )`;
-  await sql`CREATE INDEX IF NOT EXISTS jobs_created ON jobs (created_at DESC)`;
+  )`
+  await sql`CREATE INDEX IF NOT EXISTS jobs_created ON jobs (created_at DESC)`
   await sql`CREATE TABLE IF NOT EXISTS attempts (
     id TEXT PRIMARY KEY,
     month TEXT NOT NULL,
     model TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL
-  )`;
-  await sql`CREATE INDEX IF NOT EXISTS attempts_month ON attempts (month)`;
+  )`
+  await sql`CREATE INDEX IF NOT EXISTS attempts_month ON attempts (month)`
   await sql`CREATE TABLE IF NOT EXISTS mappings (
     event_id TEXT NOT NULL,
     session TEXT NOT NULL,
@@ -45,12 +45,12 @@ export async function migrate(sql: Sql) {
     last_synced_at TIMESTAMPTZ,
     error TEXT,
     PRIMARY KEY (event_id, session)
-  )`;
+  )`
   // Approved overlay colours per venue and season; absent means design-source defaults.
   await sql`CREATE TABLE IF NOT EXISTS overlays (
     venue TEXT PRIMARY KEY,
     colours JSONB NOT NULL
-  )`;
+  )`
   // Studio candidates. Nothing here is live until a version is approved.
   await sql`CREATE TABLE IF NOT EXISTS studio_versions (
     id TEXT PRIMARY KEY,
@@ -64,11 +64,11 @@ export async function migrate(sql: Sql) {
     model TEXT,
     created_at TIMESTAMPTZ NOT NULL,
     UNIQUE (venue, version)
-  )`;
+  )`
   await sql`CREATE TABLE IF NOT EXISTS studio_drafts (
     venue TEXT PRIMARY KEY,
     selected_version_id TEXT,
     colours JSONB NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL
-  )`;
+  )`
 }

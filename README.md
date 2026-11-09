@@ -39,7 +39,6 @@ Do not use `drizzle-kit push` or bypass the wrapper for adoption. See
 [deployment migration notes](deploy/README.md#drizzle-adoption-and-rollout) for
 privileges, backups, compatibility checks and rollback.
 
-
 Open **http://localhost:3000**. The gallery works immediately without credentials. Setup downloads matching font families from official F1 assets into ignored `data/fonts/`; production images cache them for offline startup. Fonts are rendered into vector paths and are not served as font files.
 
 For integrations, copy `.env.example` to `.env` and supply environment values locally or on the host. Never commit `.env` or paste keys into issues/chat.

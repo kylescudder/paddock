@@ -15,7 +15,6 @@ are documented in [deploy-core](https://github.com/kylescudder/deploy-core).
 There are no vendored engine files, lock files or sync PRs. Do not install an
 app-specific LaunchAgent. Apply future engine changes once through the central service.
 
-
 Public site: **https://paddock.thescudders.org**. Deploy hook:
 **https://deploy-paddock.thescudders.org/hooks/paddock**.
 

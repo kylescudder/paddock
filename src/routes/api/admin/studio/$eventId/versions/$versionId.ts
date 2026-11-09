@@ -1,8 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { studio } from "../../../../../../../server/studio.ts";
+import { createFileRoute } from '@tanstack/react-router'
+import { studio } from '../../../../../../../server/studio.ts'
 
 export const Route = createFileRoute(
-  "/api/admin/studio/$eventId/versions/$versionId",
+  '/api/admin/studio/$eventId/versions/$versionId'
 )({
-  server: { handlers: { GET: studio.versionImage } },
-});
+  server: { handlers: { GET: studio.versionImage } }
+})

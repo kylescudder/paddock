@@ -1,111 +1,111 @@
-import { randomUUID } from "node:crypto";
-import type { Sql, TransactionSql } from "postgres";
-import { drizzle } from "drizzle-orm/postgres-js";
-import { eq, sql as drizzleSql } from "drizzle-orm";
-import * as schema from "./schema.ts";
+import { randomUUID } from 'node:crypto'
+import type { Sql, TransactionSql } from 'postgres'
+import { drizzle } from 'drizzle-orm/postgres-js'
+import { eq, sql as drizzleSql } from 'drizzle-orm'
+import * as schema from './schema.ts'
 import type {
   AppSettings,
   EmbyMapping,
   Job,
   OverlayColours,
   RaceEvent,
-  StudioVersion,
-} from "../shared/types.ts";
+  StudioVersion
+} from '../shared/types.ts'
 
-type Background = { file: string; version: string };
+type Background = { file: string; version: string }
 export interface StoredVersion {
-  id: string;
-  venue: string;
-  file: string;
-  version: string;
-  source: StudioVersion["source"];
-  parentId: string | null;
-  feedback: string | null;
-  prompt: string | null;
-  model: string | null;
-  createdAt: string;
+  id: string
+  venue: string
+  file: string
+  version: string
+  source: StudioVersion['source']
+  parentId: string | null
+  feedback: string | null
+  prompt: string | null
+  model: string | null
+  createdAt: string
 }
 export interface StoredDraft {
-  selectedVersionId: string | null;
-  colours: OverlayColours;
-  updatedAt: string;
+  selectedVersionId: string | null
+  colours: OverlayColours
+  updatedAt: string
 }
 const iso = (value: Date | string | null) =>
-  value === null ? null : new Date(value).toISOString();
+  value === null ? null : new Date(value).toISOString()
 // Accept parsed JSONB as well as JSON strings written by the legacy Bun client.
 const parse = <T>(value: unknown) =>
-  (typeof value === "string" ? JSON.parse(value) : value) as T;
+  (typeof value === 'string' ? JSON.parse(value) : value) as T
 const job = (row: Record<string, unknown>): Job => ({
   id: row.id as string,
-  kind: row.kind as Job["kind"],
+  kind: row.kind as Job['kind'],
   eventId: row.event_id as string | null,
-  status: row.status as Job["status"],
+  status: row.status as Job['status'],
   message: row.message as string,
   createdAt: iso(row.created_at as Date)!,
-  finishedAt: iso(row.finished_at as Date | null),
-});
+  finishedAt: iso(row.finished_at as Date | null)
+})
 const storedVersion = (row: Record<string, unknown>): StoredVersion => ({
   id: row.id as string,
   venue: row.venue as string,
   file: row.file as string,
   version: row.version as string,
-  source: row.source as StoredVersion["source"],
+  source: row.source as StoredVersion['source'],
   parentId: row.parent_id as string | null,
   feedback: row.feedback as string | null,
   prompt: row.prompt as string | null,
   model: row.model as string | null,
-  createdAt: iso(row.created_at as Date)!,
-});
+  createdAt: iso(row.created_at as Date)!
+})
 
 export class Store {
-  readonly db;
+  readonly db
   constructor(
     private pool: Sql,
-    public sql: Sql | TransactionSql = pool,
+    public sql: Sql | TransactionSql = pool
   ) {
     // Postgres.js transaction clients share their pool's parsers/serializers but
     // omit `options`. Drizzle needs those options to configure its date/JSON
     // codecs. Attach the same options, never a new client or connection pool.
     this.db = drizzle({
       client: Object.assign(sql, { options: pool.options }) as Sql,
-      schema,
-    });
+      schema
+    })
   }
   // Creating a Store marks work interrupted by a previous process as retryable.
   async open() {
     await this.sql`UPDATE jobs SET status='failed',
       message='Interrupted by a restart. You can retry.', finished_at=${new Date().toISOString()}
-      WHERE status IN ('running','queued')`;
-    return this;
+      WHERE status IN ('running','queued')`
+    return this
   }
   async get<T>(key: string, fallback: T): Promise<T> {
     const [row] = await this.db
       .select({ value: schema.state.value })
       .from(schema.state)
-      .where(eq(schema.state.key, key));
-    return row ? (row.value as T) : fallback;
+      .where(eq(schema.state.key, key))
+    return row ? (row.value as T) : fallback
   }
   async set(key: string, value: unknown) {
     // Bun encoded the serialized value as a JSONB string. Keep that wire format:
     // the previous image's Store.get parses strings once (including scalars).
     // Drizzle also decodes this form, alongside ordinary JSONB objects/scalars.
-    const json = drizzleSql`${JSON.stringify(JSON.stringify(value))}::jsonb`;
+    const json = drizzleSql`${JSON.stringify(JSON.stringify(value))}::jsonb`
     await this.db
       .insert(schema.state)
       .values({ key, value: json })
-      .onConflictDoUpdate({ target: schema.state.key, set: { value: json } });
+      .onConflictDoUpdate({ target: schema.state.key, set: { value: json } })
   }
   async settings(): Promise<AppSettings> {
     return {
-      modelId: "",
+      modelId: '',
       monthlyGenerationLimit: 5,
       autoGenerate: true,
-      resolution: "2K",
-      quality: "high",
-      embyLibraryId: "",
-      embySeriesId: "",
-      ...(await this.get<Partial<AppSettings>>("settings", {})),
-    };
+      resolution: '2K',
+      quality: 'high',
+      embyLibraryId: '',
+      embySeriesId: '',
+      ...(await this.get<Partial<AppSettings>>('settings', {}))
+    }
   }
   async events(season?: number): Promise<RaceEvent[]> {
     const rows =
@@ -113,219 +113,218 @@ export class Store {
         ? await this.sql<{ payload: unknown }[]>`SELECT payload FROM events`
         : await this.sql<
             { payload: unknown }[]
-          >`SELECT payload FROM events WHERE season=${season}`;
+          >`SELECT payload FROM events WHERE season=${season}`
     return rows
       .map((row: { payload: unknown }) => parse<RaceEvent>(row.payload))
       .sort(
-        (a: RaceEvent, b: RaceEvent) =>
-          a.season - b.season || a.round - b.round,
-      );
+        (a: RaceEvent, b: RaceEvent) => a.season - b.season || a.round - b.round
+      )
   }
   async event(id: string): Promise<RaceEvent | undefined> {
-    const [row] = await this.sql`SELECT payload FROM events WHERE id=${id}`;
-    return row ? parse<RaceEvent>(row.payload) : undefined;
+    const [row] = await this.sql`SELECT payload FROM events WHERE id=${id}`
+    return row ? parse<RaceEvent>(row.payload) : undefined
   }
   async saveEvent(event: RaceEvent) {
     await this.sql`INSERT INTO events (id, season, payload)
       VALUES (${event.id}, ${event.season}, ${JSON.stringify(event)}::jsonb)
-      ON CONFLICT (id) DO UPDATE SET payload=excluded.payload, season=excluded.season`;
+      ON CONFLICT (id) DO UPDATE SET payload=excluded.payload, season=excluded.season`
   }
   // Applies a whole season's changes atomically so a failure never leaves a half-updated calendar.
   async transaction<T>(work: (tx: Store) => Promise<T>): Promise<T> {
-    const run = (tx: TransactionSql) => work(new Store(this.pool, tx));
-    return (await ("begin" in this.sql
+    const run = (tx: TransactionSql) => work(new Store(this.pool, tx))
+    return (await ('begin' in this.sql
       ? this.sql.begin(run)
-      : this.sql.savepoint(run))) as T;
+      : this.sql.savepoint(run))) as T
   }
   async backgrounds(): Promise<Map<string, Background>> {
     const rows = await this.sql<
       ({ venue: string } & Background)[]
-    >`SELECT venue, file, version FROM backgrounds`;
+    >`SELECT venue, file, version FROM backgrounds`
     return new Map(
-      rows.map((row: { venue: string } & Background) => [row.venue, row]),
-    );
+      rows.map((row: { venue: string } & Background) => [row.venue, row])
+    )
   }
   async background(venue: string): Promise<Background | undefined> {
-    return (await this.backgrounds()).get(venue);
+    return (await this.backgrounds()).get(venue)
   }
   // Newest generated background at or before this season; later seasons never alter history.
   async latestBackground(
     venue: string,
     season: number,
-    index?: Map<string, Background>,
+    index?: Map<string, Background>
   ): Promise<Background | undefined> {
-    const all = index ?? (await this.backgrounds());
+    const all = index ?? (await this.backgrounds())
     return [...all.entries()]
       .filter(([key]) => key.startsWith(`${venue}:`))
-      .map(([key, value]) => ({ year: Number(key.split(":").at(-1)), value }))
+      .map(([key, value]) => ({ year: Number(key.split(':').at(-1)), value }))
       .filter(({ year }) => year <= season)
-      .sort((a, b) => b.year - a.year)[0]?.value;
+      .sort((a, b) => b.year - a.year)[0]?.value
   }
   async saveBackground(venue: string, file: string, version: string) {
     await this
       .sql`INSERT INTO backgrounds (venue, file, version) VALUES (${venue}, ${file}, ${version})
-      ON CONFLICT (venue) DO UPDATE SET file=excluded.file, version=excluded.version`;
+      ON CONFLICT (venue) DO UPDATE SET file=excluded.file, version=excluded.version`
   }
   async overlays(): Promise<Map<string, OverlayColours>> {
     const rows = await this.sql<
       { venue: string; colours: unknown }[]
-    >`SELECT venue, colours FROM overlays`;
+    >`SELECT venue, colours FROM overlays`
     return new Map(
       rows.map((row: { venue: string; colours: unknown }) => [
         row.venue,
-        parse<OverlayColours>(row.colours),
-      ]),
-    );
+        parse<OverlayColours>(row.colours)
+      ])
+    )
   }
   async overlay(venue: string): Promise<OverlayColours | undefined> {
     const [row] = await this
-      .sql`SELECT colours FROM overlays WHERE venue=${venue}`;
-    return row ? parse<OverlayColours>(row.colours) : undefined;
+      .sql`SELECT colours FROM overlays WHERE venue=${venue}`
+    return row ? parse<OverlayColours>(row.colours) : undefined
   }
   async saveOverlay(venue: string, colours: OverlayColours | null) {
-    if (!colours) await this.sql`DELETE FROM overlays WHERE venue=${venue}`;
+    if (!colours) await this.sql`DELETE FROM overlays WHERE venue=${venue}`
     else
       await this
         .sql`INSERT INTO overlays (venue, colours) VALUES (${venue}, ${JSON.stringify(colours)}::jsonb)
-        ON CONFLICT (venue) DO UPDATE SET colours=excluded.colours`;
+        ON CONFLICT (venue) DO UPDATE SET colours=excluded.colours`
   }
   async studioVersions(venue: string): Promise<StoredVersion[]> {
     const rows = await this
-      .sql`SELECT * FROM studio_versions WHERE venue=${venue} ORDER BY created_at, id`;
-    return rows.map(storedVersion);
+      .sql`SELECT * FROM studio_versions WHERE venue=${venue} ORDER BY created_at, id`
+    return rows.map(storedVersion)
   }
   async studioVersion(id: string): Promise<StoredVersion | undefined> {
-    const [row] = await this.sql`SELECT * FROM studio_versions WHERE id=${id}`;
-    return row ? storedVersion(row) : undefined;
+    const [row] = await this.sql`SELECT * FROM studio_versions WHERE id=${id}`
+    return row ? storedVersion(row) : undefined
   }
   // The same image is recorded once per venue; re-adding it returns the existing version.
   async addStudioVersion(
-    value: Omit<StoredVersion, "id" | "createdAt">,
+    value: Omit<StoredVersion, 'id' | 'createdAt'>
   ): Promise<StoredVersion> {
-    const id = randomUUID();
+    const id = randomUUID()
     await this
       .sql`INSERT INTO studio_versions (id, venue, file, version, source, parent_id, feedback, prompt, model, created_at)
       VALUES (${id}, ${value.venue}, ${value.file}, ${value.version}, ${value.source}, ${value.parentId},
         ${value.feedback}, ${value.prompt}, ${value.model}, ${new Date().toISOString()})
-      ON CONFLICT (venue, version) DO NOTHING`;
+      ON CONFLICT (venue, version) DO NOTHING`
     const [row] = await this
-      .sql`SELECT * FROM studio_versions WHERE venue=${value.venue} AND version=${value.version}`;
-    return storedVersion(row);
+      .sql`SELECT * FROM studio_versions WHERE venue=${value.venue} AND version=${value.version}`
+    return storedVersion(row)
   }
   async studioDraft(venue: string): Promise<StoredDraft | undefined> {
     const [row] = await this
-      .sql`SELECT * FROM studio_drafts WHERE venue=${venue}`;
+      .sql`SELECT * FROM studio_drafts WHERE venue=${venue}`
     return row
       ? {
           selectedVersionId: row.selected_version_id as string | null,
           colours: parse<OverlayColours>(row.colours),
-          updatedAt: iso(row.updated_at as Date)!,
+          updatedAt: iso(row.updated_at as Date)!
         }
-      : undefined;
+      : undefined
   }
-  async saveStudioDraft(venue: string, draft: Omit<StoredDraft, "updatedAt">) {
+  async saveStudioDraft(venue: string, draft: Omit<StoredDraft, 'updatedAt'>) {
     await this
       .sql`INSERT INTO studio_drafts (venue, selected_version_id, colours, updated_at)
       VALUES (${venue}, ${draft.selectedVersionId}, ${JSON.stringify(draft.colours)}::jsonb, ${new Date().toISOString()})
       ON CONFLICT (venue) DO UPDATE SET selected_version_id=excluded.selected_version_id,
-        colours=excluded.colours, updated_at=excluded.updated_at`;
+        colours=excluded.colours, updated_at=excluded.updated_at`
   }
   async deleteStudioDraft(venue: string) {
-    await this.sql`DELETE FROM studio_drafts WHERE venue=${venue}`;
+    await this.sql`DELETE FROM studio_drafts WHERE venue=${venue}`
   }
-  async latestJob(kind: Job["kind"], eventId: string): Promise<Job | null> {
+  async latestJob(kind: Job['kind'], eventId: string): Promise<Job | null> {
     const [row] = await this
-      .sql`SELECT * FROM jobs WHERE kind=${kind} AND event_id=${eventId} ORDER BY created_at DESC LIMIT 1`;
-    return row ? job(row) : null;
+      .sql`SELECT * FROM jobs WHERE kind=${kind} AND event_id=${eventId} ORDER BY created_at DESC LIMIT 1`
+    return row ? job(row) : null
   }
   async jobs(): Promise<Job[]> {
     const rows = await this
-      .sql`SELECT * FROM jobs ORDER BY created_at DESC LIMIT 30`;
-    return rows.map(job);
+      .sql`SELECT * FROM jobs ORDER BY created_at DESC LIMIT 30`
+    return rows.map(job)
   }
   async createJob(
-    kind: Job["kind"],
+    kind: Job['kind'],
     eventId: string | null,
-    message: string,
+    message: string
   ): Promise<Job> {
     const job: Job = {
       id: randomUUID(),
       kind,
       eventId,
-      status: "queued",
+      status: 'queued',
       message,
       createdAt: new Date().toISOString(),
-      finishedAt: null,
-    };
+      finishedAt: null
+    }
     await this
       .sql`INSERT INTO jobs (id, kind, event_id, status, message, created_at)
-      VALUES (${job.id}, ${job.kind}, ${job.eventId}, ${job.status}, ${job.message}, ${job.createdAt})`;
-    return job;
+      VALUES (${job.id}, ${job.kind}, ${job.eventId}, ${job.status}, ${job.message}, ${job.createdAt})`
+    return job
   }
-  async updateJob(id: string, status: Job["status"], message: string) {
+  async updateJob(id: string, status: Job['status'], message: string) {
     const finished =
-      status === "running" || status === "queued"
+      status === 'running' || status === 'queued'
         ? null
-        : new Date().toISOString();
+        : new Date().toISOString()
     await this
       .sql`UPDATE jobs SET status=${status}, message=${message}, finished_at=${finished}
-      WHERE id=${id}`;
+      WHERE id=${id}`
   }
   async attempts(
-    month = new Date().toISOString().slice(0, 7),
+    month = new Date().toISOString().slice(0, 7)
   ): Promise<number> {
     const [row] = await this
-      .sql`SELECT count(*)::int AS count FROM attempts WHERE month=${month}`;
-    return Number(row?.count || 0);
+      .sql`SELECT count(*)::int AS count FROM attempts WHERE month=${month}`
+    return Number(row?.count || 0)
   }
   async reserveAttempt(
     model: string,
     limit: number,
-    now = new Date(),
+    now = new Date()
   ): Promise<boolean> {
-    const month = now.toISOString().slice(0, 7);
+    const month = now.toISOString().slice(0, 7)
     return this.transaction(async ({ sql: tx }) => {
       // Serialises concurrent reservations so the monthly allowance can never be exceeded.
-      await tx`SELECT pg_advisory_xact_lock(hashtext('paddock-attempts'))`;
+      await tx`SELECT pg_advisory_xact_lock(hashtext('paddock-attempts'))`
       const [row] =
-        await tx`SELECT count(*)::int AS count FROM attempts WHERE month=${month}`;
-      if (Number(row.count) >= limit) return false;
+        await tx`SELECT count(*)::int AS count FROM attempts WHERE month=${month}`
+      if (Number(row.count) >= limit) return false
       await tx`INSERT INTO attempts (id, month, model, created_at)
-        VALUES (${randomUUID()}, ${month}, ${model}, ${now.toISOString()})`;
-      return true;
-    });
+        VALUES (${randomUUID()}, ${month}, ${model}, ${now.toISOString()})`
+      return true
+    })
   }
   async mappings(): Promise<EmbyMapping[]> {
     const rows = await this
-      .sql`SELECT * FROM mappings ORDER BY event_id, session`;
+      .sql`SELECT * FROM mappings ORDER BY event_id, session`
     return rows.map((row: Record<string, unknown>) => ({
       eventId: row.event_id as string,
-      session: row.session as EmbyMapping["session"],
+      session: row.session as EmbyMapping['session'],
       itemId: row.item_id as string,
       itemName: row.item_name as string,
       lastImageVersion: row.last_image_version as string | null,
       lastSyncedAt: iso(row.last_synced_at as Date | null),
-      error: row.error as string | null,
-    }));
+      error: row.error as string | null
+    }))
   }
   async saveMapping(
     mapping: EmbyMapping,
-    sql: Sql | TransactionSql = this.sql,
+    sql: Sql | TransactionSql = this.sql
   ) {
     await sql`INSERT INTO mappings (event_id, session, item_id, item_name, last_image_version, last_synced_at, error)
       VALUES (${mapping.eventId}, ${mapping.session}, ${mapping.itemId}, ${mapping.itemName},
         ${mapping.lastImageVersion}, ${mapping.lastSyncedAt}, ${mapping.error})
       ON CONFLICT (event_id, session) DO UPDATE SET item_id=excluded.item_id, item_name=excluded.item_name,
-        last_image_version=excluded.last_image_version, last_synced_at=excluded.last_synced_at, error=excluded.error`;
+        last_image_version=excluded.last_image_version, last_synced_at=excluded.last_synced_at, error=excluded.error`
   }
   async deleteMapping(eventId: string, session: string) {
     await this
-      .sql`DELETE FROM mappings WHERE event_id=${eventId} AND session=${session}`;
+      .sql`DELETE FROM mappings WHERE event_id=${eventId} AND session=${session}`
   }
   // Remaps are saved together: either every row changes or none do.
   async replaceMappings(values: EmbyMapping[]) {
     await this.transaction(async ({ sql: tx }) => {
-      for (const item of values) await this.saveMapping(item, tx);
-    });
+      for (const item of values) await this.saveMapping(item, tx)
+    })
   }
 }

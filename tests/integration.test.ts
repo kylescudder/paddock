@@ -1,444 +1,442 @@
-import { afterAll, test } from "bun:test";
-import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { mkdtemp, cp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import type { AddressInfo } from "node:net";
-import postgres from "postgres";
-import sharp from "sharp";
-import { migrate } from "../server/migrations.ts";
-import { Store } from "../server/db.ts";
+import { afterAll, test } from 'bun:test'
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { mkdtemp, cp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import type { AddressInfo } from 'node:net'
+import postgres from 'postgres'
+import sharp from 'sharp'
+import { migrate } from '../server/migrations.ts'
+import { Store } from '../server/db.ts'
 import {
   applyCalendar,
   eventSlug,
   parseCalendar,
   seedCalendars,
-  syncCalendars,
-} from "../server/calendar.ts";
-import { Artwork } from "../server/artwork.ts";
+  syncCalendars
+} from '../server/calendar.ts'
+import { Artwork } from '../server/artwork.ts'
 import {
   OpenRouter,
   assertSafeImage,
   imageRequest,
   normalizeModels,
-  readImageUrl,
-} from "../server/openrouter.ts";
-import { Emby, inferSession, matchItem } from "../server/emby.ts";
-import { useServices, type Services } from "../server/services.ts";
-import { guardOverrides } from "../server/guard.ts";
-import { image, owner } from "../server/api.ts";
-import { config } from "../server/config.ts";
-import { sessionKeys, type ImageModel } from "../shared/types.ts";
+  readImageUrl
+} from '../server/openrouter.ts'
+import { Emby, inferSession, matchItem } from '../server/emby.ts'
+import { useServices, type Services } from '../server/services.ts'
+import { guardOverrides } from '../server/guard.ts'
+import { image, owner } from '../server/api.ts'
+import { config } from '../server/config.ts'
+import { sessionKeys, type ImageModel } from '../shared/types.ts'
 
-const root = process.cwd();
+const root = process.cwd()
 const snapshot = (year: number) =>
-  JSON.parse(readFileSync(`assets/calendars/${year}.json`, "utf8"));
+  JSON.parse(readFileSync(`assets/calendars/${year}.json`, 'utf8'))
 // An isolated database: tests refuse to run against anything not named *_test.
 const databaseUrl =
   process.env.TEST_DATABASE_URL ||
-  "postgres://postgres:paddock@127.0.0.1:55432/paddock_test";
-if (!new URL(databaseUrl).pathname.endsWith("_test"))
-  throw new Error("TEST_DATABASE_URL must name a database ending in _test");
+  'postgres://postgres:paddock@127.0.0.1:55432/paddock_test'
+if (!new URL(databaseUrl).pathname.endsWith('_test'))
+  throw new Error('TEST_DATABASE_URL must name a database ending in _test')
 const sql = postgres(databaseUrl, {
   max: 4,
   idle_timeout: 20,
-  connect_timeout: 10,
-});
-await migrate(databaseUrl);
-afterAll(() => sql.end());
+  connect_timeout: 10
+})
+await migrate(databaseUrl)
+afterAll(() => sql.end())
 async function fixture() {
-  await sql`TRUNCATE state, events, backgrounds, jobs, attempts, mappings, overlays, studio_versions, studio_drafts`;
+  await sql`TRUNCATE state, events, backgrounds, jobs, attempts, mappings, overlays, studio_versions, studio_drafts`
   return {
     store: await new Store(sql).open(),
-    close() {},
-  };
+    close() {}
+  }
 }
 const model: ImageModel = {
-  id: "new-provider/new-image-model",
-  name: "A newly released model",
+  id: 'new-provider/new-image-model',
+  name: 'A newly released model',
   created: 1,
-  route: "images",
-  inputModalities: ["text", "image"],
-  outputModalities: ["image"],
+  route: 'images',
+  inputModalities: ['text', 'image'],
+  outputModalities: ['image'],
   parameters: {
-    aspect_ratio: { type: "enum", values: ["16:9", "1:1"] },
-    resolution: { type: "enum", values: ["1K", "2K"] },
-    input_references: { type: "range", min: 0, max: 2 },
-    n: { type: "range", min: 1, max: 1 },
-  },
-};
+    aspect_ratio: { type: 'enum', values: ['16:9', '1:1'] },
+    resolution: { type: 'enum', values: ['1K', '2K'] },
+    input_references: { type: 'range', min: 0, max: 2 },
+    n: { type: 'range', min: 1, max: 1 }
+  }
+}
 
-test("live seed calendar creates Singapore sprint sessions, relocated Bahrain, and stable renamed events", () => {
-  const events = parseCalendar(snapshot(2026), 2026);
-  const singapore = events.find((event) => event.venueKey === "marina-bay")!;
-  assert.equal(singapore.round, 17);
+test('live seed calendar creates Singapore sprint sessions, relocated Bahrain, and stable renamed events', () => {
+  const events = parseCalendar(snapshot(2026), 2026)
+  const singapore = events.find((event) => event.venueKey === 'marina-bay')!
+  assert.equal(singapore.round, 17)
   assert.deepEqual(sessionKeys(singapore.sprint), [
-    "sprint-qualifying",
-    "sprint",
-    "qualifying",
-    "race",
-  ]);
+    'sprint-qualifying',
+    'sprint',
+    'qualifying',
+    'race'
+  ])
   assert.equal(
-    events.find((event) => event.slug === "bahrain")?.venueKey,
-    "sepang",
-  );
+    events.find((event) => event.slug === 'bahrain')?.venueKey,
+    'sepang'
+  )
   assert.equal(
-    eventSlug("Bahrain Grand Prix"),
-    eventSlug("Bahrain Grand Prix in Malaysia"),
-  );
+    eventSlug('Bahrain Grand Prix'),
+    eventSlug('Bahrain Grand Prix in Malaysia')
+  )
   assert.equal(
-    eventSlug("São Paulo Grand Prix"),
-    eventSlug("Brazilian Grand Prix"),
-  );
-  assert.equal(new Set(events.map((event) => event.id)).size, events.length);
-});
-test("truncated or cross-season feeds cannot overwrite a valid calendar", () => {
-  const data = snapshot(2026);
-  data.MRData.RaceTable.Races.pop();
-  assert.throws(() => parseCalendar(data, 2026), /incomplete/);
-  assert.throws(() => parseCalendar(snapshot(2026), 2025), /season/);
-});
-test("round/format changes preserve Emby mapping and stable image URL, invalidate render version, and archive removals", async () => {
-  const f = await fixture();
+    eventSlug('São Paulo Grand Prix'),
+    eventSlug('Brazilian Grand Prix')
+  )
+  assert.equal(new Set(events.map((event) => event.id)).size, events.length)
+})
+test('truncated or cross-season feeds cannot overwrite a valid calendar', () => {
+  const data = snapshot(2026)
+  data.MRData.RaceTable.Races.pop()
+  assert.throws(() => parseCalendar(data, 2026), /incomplete/)
+  assert.throws(() => parseCalendar(snapshot(2026), 2025), /season/)
+})
+test('round/format changes preserve Emby mapping and stable image URL, invalidate render version, and archive removals', async () => {
+  const f = await fixture()
   try {
-    const incoming = parseCalendar(snapshot(2026), 2026);
-    const singapore = incoming.find((event) => event.slug === "singapore")!;
+    const incoming = parseCalendar(snapshot(2026), 2026)
+    const singapore = incoming.find((event) => event.slug === 'singapore')!
     const previous = incoming.map((event) =>
-      event.id === singapore.id
-        ? { ...event, round: 18, sprint: false }
-        : event,
-    );
-    await applyCalendar(f.store, 2026, previous);
-    const artwork = new Artwork(f.store, root, path.join(root, "data"));
+      event.id === singapore.id ? { ...event, round: 18, sprint: false } : event
+    )
+    await applyCalendar(f.store, 2026, previous)
+    const artwork = new Artwork(f.store, root, path.join(root, 'data'))
     const before = await artwork.libraryEvent(
-      (await f.store.event(singapore.id))!,
-    );
+      (await f.store.event(singapore.id))!
+    )
     await f.store.saveMapping({
       eventId: singapore.id,
-      session: "race",
-      itemId: "episode-42",
-      itemName: "Singapore Race",
-      lastImageVersion: "old",
+      session: 'race',
+      itemId: 'episode-42',
+      itemName: 'Singapore Race',
+      lastImageVersion: 'old',
       lastSyncedAt: null,
-      error: null,
-    });
-    const removed = incoming.find((event) => event.slug === "monaco")!;
+      error: null
+    })
+    const removed = incoming.find((event) => event.slug === 'monaco')!
     await applyCalendar(
       f.store,
       2026,
-      incoming.filter((event) => event.id !== removed.id),
-    );
+      incoming.filter((event) => event.id !== removed.id)
+    )
     const after = await artwork.libraryEvent(
-      (await f.store.event(singapore.id))!,
-    );
-    assert.equal(after.images.length, 4);
+      (await f.store.event(singapore.id))!
+    )
+    assert.equal(after.images.length, 4)
     assert.equal(
-      before.images.at(-1)!.png.split("?")[0],
-      after.images.at(-1)!.png.split("?")[0],
-    );
-    assert.notEqual(before.images.at(-1)!.png, after.images.at(-1)!.png);
-    assert.equal((await f.store.mappings())[0].itemId, "episode-42");
-    assert.equal((await f.store.event(removed.id))?.cancelled, true);
+      before.images.at(-1)!.png.split('?')[0],
+      after.images.at(-1)!.png.split('?')[0]
+    )
+    assert.notEqual(before.images.at(-1)!.png, after.images.at(-1)!.png)
+    assert.equal((await f.store.mappings())[0].itemId, 'episode-42')
+    assert.equal((await f.store.event(removed.id))?.cancelled, true)
   } finally {
-    f.close();
+    f.close()
   }
-});
-test("completed seasons are not fetched or modified by later calendar syncs", async () => {
-  const f = await fixture();
-  const years: string[] = [];
+})
+test('completed seasons are not fetched or modified by later calendar syncs', async () => {
+  const f = await fixture()
+  const years: string[] = []
   try {
-    await seedCalendars(f.store, root);
-    await f.store.set("frozen:2025", true);
-    await syncCalendars(f.store, new Date("2026-10-17T12:00:00Z"), (async (
-      url,
+    await seedCalendars(f.store, root)
+    await f.store.set('frozen:2025', true)
+    await syncCalendars(f.store, new Date('2026-10-17T12:00:00Z'), (async (
+      url
     ) => {
-      years.push(String(url));
+      years.push(String(url))
       return Response.json(
-        String(url).includes("2027")
-          ? { MRData: { total: "0" } }
-          : snapshot(2026),
-      );
-    }) as typeof fetch);
+        String(url).includes('2027')
+          ? { MRData: { total: '0' } }
+          : snapshot(2026)
+      )
+    }) as typeof fetch)
     assert.equal(
-      years.some((url) => url.includes("/2025/")),
-      false,
-    );
-    assert.ok(await f.store.get("lastSync", null));
+      years.some((url) => url.includes('/2025/')),
+      false
+    )
+    assert.ok(await f.store.get('lastSync', null))
   } finally {
-    f.close();
+    f.close()
   }
-});
-test("new generation models appear automatically, dedicated image route wins, and text-only models are excluded", () => {
+})
+test('new generation models appear automatically, dedicated image route wins, and text-only models are excluded', () => {
   const raw = {
     id: model.id,
     name: model.name,
     created: 100,
     architecture: {
-      input_modalities: ["text", "image"],
-      output_modalities: ["image"],
+      input_modalities: ['text', 'image'],
+      output_modalities: ['image']
     },
-    supported_parameters: model.parameters,
-  };
+    supported_parameters: model.parameters
+  }
   const catalog = normalizeModels(
     [raw],
     [
-      { ...raw, supported_parameters: ["modalities"] },
+      { ...raw, supported_parameters: ['modalities'] },
       {
-        id: "text-only",
-        name: "Text only",
-        architecture: { output_modalities: ["text"] },
-      },
-    ],
-  );
-  assert.equal(catalog.length, 1);
-  assert.equal(catalog[0].route, "images");
-  assert.equal(catalog[0].id, model.id);
+        id: 'text-only',
+        name: 'Text only',
+        architecture: { output_modalities: ['text'] }
+      }
+    ]
+  )
+  assert.equal(catalog.length, 1)
+  assert.equal(catalog[0].route, 'images')
+  assert.equal(catalog[0].id, model.id)
   const body = imageRequest(
     catalog[0],
-    "A venue",
-    "data:image/png;base64,AA==",
-    "4K",
-    "high",
-  ) as Record<string, unknown>;
-  assert.equal(body.resolution, "2K");
-  assert.equal(body.aspect_ratio, "16:9");
-  assert.equal(body.quality, undefined);
-  assert.equal(body.output_format, undefined);
-  assert.ok(body.input_references);
-});
-test("model refresh uses live catalogues, preserves cache on transient failures and exposes stale state", async () => {
-  const f = await fixture();
-  let fail = false;
+    'A venue',
+    'data:image/png;base64,AA==',
+    '4K',
+    'high'
+  ) as Record<string, unknown>
+  assert.equal(body.resolution, '2K')
+  assert.equal(body.aspect_ratio, '16:9')
+  assert.equal(body.quality, undefined)
+  assert.equal(body.output_format, undefined)
+  assert.ok(body.input_references)
+})
+test('model refresh uses live catalogues, preserves cache on transient failures and exposes stale state', async () => {
+  const f = await fixture()
+  let fail = false
   try {
     const router = new OpenRouter(
       f.store,
-      "",
-      "https://paddock.thescudders.org",
+      '',
+      'https://paddock.thescudders.org',
       (async (url) => {
-        if (fail) throw new Error("Temporary outage");
+        if (fail) throw new Error('Temporary outage')
         return Response.json({
-          data: String(url).includes("/images/")
+          data: String(url).includes('/images/')
             ? [
                 {
                   id: model.id,
                   name: model.name,
                   architecture: {
-                    input_modalities: ["text"],
-                    output_modalities: ["image"],
+                    input_modalities: ['text'],
+                    output_modalities: ['image']
                   },
-                  supported_parameters: model.parameters,
-                },
+                  supported_parameters: model.parameters
+                }
               ]
-            : [],
-        });
-      }) as typeof fetch,
-    );
-    assert.equal((await router.models(true)).models[0].id, model.id);
-    await f.store.set("modelCatalog", {
+            : []
+        })
+      }) as typeof fetch
+    )
+    assert.equal((await router.models(true)).models[0].id, model.id)
+    await f.store.set('modelCatalog', {
       ...(await router.models()),
-      fetchedAt: "2020-01-01",
-    });
-    fail = true;
-    assert.equal((await router.models()).stale, true);
-    await assert.rejects(() => router.models(true), /Temporary outage/);
+      fetchedAt: '2020-01-01'
+    })
+    fail = true
+    assert.equal((await router.models()).stale, true)
+    await assert.rejects(() => router.models(true), /Temporary outage/)
   } finally {
-    f.close();
+    f.close()
   }
-});
-test("unified inference checks one provider capability map and never mixes unsupported fields", async () => {
-  const f = await fixture();
-  let sent: Record<string, unknown> | null = null;
+})
+test('unified inference checks one provider capability map and never mixes unsupported fields', async () => {
+  const f = await fixture()
+  let sent: Record<string, unknown> | null = null
   try {
     const router = new OpenRouter(
       f.store,
-      "isolated-fixture-key",
-      "https://paddock.thescudders.org",
+      'isolated-fixture-key',
+      'https://paddock.thescudders.org',
       (async (url, init) => {
-        if (String(url).endsWith("/endpoints"))
+        if (String(url).endsWith('/endpoints'))
           return Response.json({
             endpoints: [
               {
-                provider_tag: "provider/region",
+                provider_tag: 'provider/region',
                 supported_parameters: {
-                  aspect_ratio: { type: "enum", values: ["16:9"] },
-                  resolution: { type: "enum", values: ["1K"] },
-                },
-              },
-            ],
-          });
-        sent = JSON.parse(String(init?.body));
+                  aspect_ratio: { type: 'enum', values: ['16:9'] },
+                  resolution: { type: 'enum', values: ['1K'] }
+                }
+              }
+            ]
+          })
+        sent = JSON.parse(String(init?.body))
         return Response.json({
-          data: [{ b64_json: "AA==", media_type: "image/png" }],
-        });
-      }) as typeof fetch,
-    );
-    await router.generate(model, "Venue", null, "2K", "high");
-    assert.ok(sent);
-    assert.equal((sent as Record<string, unknown>).resolution, "1K");
-    assert.equal((sent as Record<string, unknown>).quality, undefined);
+          data: [{ b64_json: 'AA==', media_type: 'image/png' }]
+        })
+      }) as typeof fetch
+    )
+    await router.generate(model, 'Venue', null, '2K', 'high')
+    assert.ok(sent)
+    assert.equal((sent as Record<string, unknown>).resolution, '1K')
+    assert.equal((sent as Record<string, unknown>).quality, undefined)
     assert.deepEqual((sent as Record<string, unknown>).provider, {
-      only: ["provider/region"],
-      allow_fallbacks: false,
-    });
+      only: ['provider/region'],
+      allow_fallbacks: false
+    })
   } finally {
-    f.close();
+    f.close()
   }
-});
-test("monthly attempt reservations persist through restarts and reset by UTC month", async () => {
-  const f = await fixture();
+})
+test('monthly attempt reservations persist through restarts and reset by UTC month', async () => {
+  const f = await fixture()
   try {
     for (let i = 0; i < 5; i++)
       assert.equal(
         await f.store.reserveAttempt(
           model.id,
           5,
-          new Date("2026-10-31T23:59:00Z"),
+          new Date('2026-10-31T23:59:00Z')
         ),
-        true,
-      );
+        true
+      )
     assert.equal(
       await f.store.reserveAttempt(
         model.id,
         5,
-        new Date("2026-10-31T23:59:59Z"),
+        new Date('2026-10-31T23:59:59Z')
       ),
-      false,
-    );
+      false
+    )
     // A restart opens a fresh store on the same database.
-    f.store = await new Store(sql).open();
-    assert.equal(await f.store.attempts("2026-10"), 5);
+    f.store = await new Store(sql).open()
+    assert.equal(await f.store.attempts('2026-10'), 5)
     assert.equal(
       await f.store.reserveAttempt(
         model.id,
         5,
-        new Date("2026-11-01T00:00:00Z"),
+        new Date('2026-11-01T00:00:00Z')
       ),
-      true,
-    );
+      true
+    )
   } finally {
-    f.close();
+    f.close()
   }
-});
-test("new venue overrides cannot change historical seasons", async () => {
-  const f = await fixture();
+})
+test('new venue overrides cannot change historical seasons', async () => {
+  const f = await fixture()
   try {
     await f.store.saveBackground(
-      "marina-bay:2026",
-      "/fixture/new-venue.png",
-      "new",
-    );
-    assert.equal(await f.store.latestBackground("marina-bay", 2025), undefined);
+      'marina-bay:2026',
+      '/fixture/new-venue.png',
+      'new'
+    )
+    assert.equal(await f.store.latestBackground('marina-bay', 2025), undefined)
     assert.equal(
-      (await f.store.latestBackground("marina-bay", 2026))?.version,
-      "new",
-    );
+      (await f.store.latestBackground('marina-bay', 2026))?.version,
+      'new'
+    )
     assert.equal(
-      (await f.store.latestBackground("marina-bay", 2027))?.version,
-      "new",
-    );
+      (await f.store.latestBackground('marina-bay', 2027))?.version,
+      'new'
+    )
   } finally {
-    f.close();
+    f.close()
   }
-});
-test("unsafe SVG and private provider download URLs are rejected", async () => {
+})
+test('unsafe SVG and private provider download URLs are rejected', async () => {
   assert.throws(
     () =>
       assertSafeImage(
-        Buffer.from('<svg><image href="file:///etc/passwd"/></svg>'),
+        Buffer.from('<svg><image href="file:///etc/passwd"/></svg>')
       ),
-    /external/,
-  );
+    /external/
+  )
   assert.throws(
-    () => assertSafeImage(Buffer.from("<svg><script>bad()</script></svg>")),
-    /active/,
-  );
+    () => assertSafeImage(Buffer.from('<svg><script>bad()</script></svg>')),
+    /active/
+  )
   assert.doesNotThrow(() =>
-    assertSafeImage(Buffer.from('<svg><path fill="url(#gradient)"/></svg>')),
-  );
+    assertSafeImage(Buffer.from('<svg><path fill="url(#gradient)"/></svg>'))
+  )
   await assert.rejects(
-    () => readImageUrl("https://127.0.0.1/private"),
-    /public HTTPS/,
-  );
-  await assert.rejects(() => readImageUrl("file:///private"), /public HTTPS/);
-});
-test("Emby matching ignores mutable round numbers and distinguishes sprint qualifying from race qualifying", () => {
-  const events = parseCalendar(snapshot(2026), 2026);
+    () => readImageUrl('https://127.0.0.1/private'),
+    /public HTTPS/
+  )
+  await assert.rejects(() => readImageUrl('file:///private'), /public HTTPS/)
+})
+test('Emby matching ignores mutable round numbers and distinguishes sprint qualifying from race qualifying', () => {
+  const events = parseCalendar(snapshot(2026), 2026)
   const candidate = matchItem(
     {
-      Id: "42",
-      Name: "Formula 1 2026 Singapore Sprint Qualifying",
-      Path: "/F1/2026/18 Singapore/Sprint Qualifying.mkv",
+      Id: '42',
+      Name: 'Formula 1 2026 Singapore Sprint Qualifying',
+      Path: '/F1/2026/18 Singapore/Sprint Qualifying.mkv'
     },
-    events,
-  );
+    events
+  )
   assert.deepEqual(candidate.candidates, [
-    { eventId: "2026-singapore", session: "sprint-qualifying", score: 100 },
-  ]);
-  assert.equal(inferSession("Singapore Race Quali"), "qualifying");
-  assert.equal(inferSession("Singapore FP1"), null);
-  assert.equal(inferSession("Race Highlights"), null);
-});
-test("Emby uploads a base64 PNG once per changed version, and keeps errors retryable", async () => {
-  const f = await fixture();
-  let writes = 0;
-  let fail = false;
-  let version = "first";
+    { eventId: '2026-singapore', session: 'sprint-qualifying', score: 100 }
+  ])
+  assert.equal(inferSession('Singapore Race Quali'), 'qualifying')
+  assert.equal(inferSession('Singapore FP1'), null)
+  assert.equal(inferSession('Race Highlights'), null)
+})
+test('Emby uploads a base64 PNG once per changed version, and keeps errors retryable', async () => {
+  const f = await fixture()
+  let writes = 0
+  let fail = false
+  let version = 'first'
   try {
-    await seedCalendars(f.store, root);
+    await seedCalendars(f.store, root)
     await f.store.saveMapping({
-      eventId: "2026-singapore",
-      session: "race",
-      itemId: "42",
-      itemName: "Singapore race",
+      eventId: '2026-singapore',
+      session: 'race',
+      itemId: '42',
+      itemName: 'Singapore race',
       lastImageVersion: null,
       lastSyncedAt: null,
-      error: null,
-    });
+      error: null
+    })
     const artwork = {
       background: () => ({}),
       version: () => version,
-      png: async () => Buffer.from("isolated-png-fixture"),
-    } as unknown as Artwork;
+      png: async () => Buffer.from('isolated-png-fixture')
+    } as unknown as Artwork
     const emby = new Emby(
       f.store,
       artwork,
-      "http://isolated-emby.invalid",
-      "isolated-fixture-token",
+      'http://isolated-emby.invalid',
+      'isolated-fixture-token',
       (async (url, init) => {
-        assert.ok(String(url).endsWith("/Items/42/Images/Primary"));
-        assert.equal(init?.method, "POST");
+        assert.ok(String(url).endsWith('/Items/42/Images/Primary'))
+        assert.equal(init?.method, 'POST')
         assert.equal(
-          (init?.headers as Record<string, string>)["Content-Type"],
-          "image/png",
-        );
+          (init?.headers as Record<string, string>)['Content-Type'],
+          'image/png'
+        )
         assert.equal(
           init?.body,
-          Buffer.from("isolated-png-fixture").toString("base64"),
-        );
-        writes++;
-        return new Response(null, { status: fail ? 500 : 204 });
-      }) as typeof fetch,
-    );
-    await emby.sync();
-    await emby.sync();
-    assert.equal(writes, 1);
-    version = "second";
-    fail = true;
-    await emby.sync();
-    assert.equal((await f.store.mappings())[0].lastImageVersion, "first");
-    assert.match((await f.store.mappings())[0].error!, /500/);
-    fail = false;
-    await emby.sync();
-    assert.equal((await f.store.mappings())[0].lastImageVersion, "second");
-    assert.equal((await f.store.mappings())[0].error, null);
+          Buffer.from('isolated-png-fixture').toString('base64')
+        )
+        writes++
+        return new Response(null, { status: fail ? 500 : 204 })
+      }) as typeof fetch
+    )
+    await emby.sync()
+    await emby.sync()
+    assert.equal(writes, 1)
+    version = 'second'
+    fail = true
+    await emby.sync()
+    assert.equal((await f.store.mappings())[0].lastImageVersion, 'first')
+    assert.match((await f.store.mappings())[0].error!, /500/)
+    fail = false
+    await emby.sync()
+    assert.equal((await f.store.mappings())[0].lastImageVersion, 'second')
+    assert.equal((await f.store.mappings())[0].error, null)
   } finally {
-    f.close();
+    f.close()
   }
-});
-test("admin routes deny anonymous users and cross-origin mutations before any inference runs", async () => {
-  const f = await fixture();
-  let inferenceCalls = 0;
+})
+test('admin routes deny anonymous users and cross-origin mutations before any inference runs', async () => {
+  const f = await fixture()
+  let inferenceCalls = 0
   useServices({
     store: f.store,
     artwork: {} as Artwork,
@@ -446,324 +444,322 @@ test("admin routes deny anonymous users and cross-origin mutations before any in
     emby: { configured: false } as Emby,
     jobs: {
       generate: async () => {
-        inferenceCalls++;
-        return { id: "queued" };
+        inferenceCalls++
+        return { id: 'queued' }
       },
-      autoGenerate: async () => {},
+      autoGenerate: async () => {}
     },
-    config,
-  } as unknown as Services);
+    config
+  } as unknown as Services)
   guardOverrides.current = {
-    config: { appUrl: "https://paddock.thescudders.org" },
+    config: { appUrl: 'https://paddock.thescudders.org' },
     identity: (request) => {
-      const userId = request.headers.get("x-test-user");
-      return { userId: userId || null, isAuthenticated: Boolean(userId) };
-    },
-  };
+      const userId = request.headers.get('x-test-user')
+      return { userId: userId || null, isAuthenticated: Boolean(userId) }
+    }
+  }
   try {
-    const send = (user: string, origin = "https://paddock.thescudders.org") =>
+    const send = (user: string, origin = 'https://paddock.thescudders.org') =>
       owner.generate({
         request: new Request(
-          "https://paddock.thescudders.org/api/admin/generate",
+          'https://paddock.thescudders.org/api/admin/generate',
           {
-            method: "POST",
+            method: 'POST',
             headers: {
-              "Content-Type": "application/json",
-              "X-Test-User": user,
-              Origin: origin,
+              'Content-Type': 'application/json',
+              'X-Test-User': user,
+              Origin: origin
             },
-            body: JSON.stringify({ eventId: "2026-singapore" }),
-          },
-        ),
-      });
-    assert.equal((await send("")).status, 401);
+            body: JSON.stringify({ eventId: '2026-singapore' })
+          }
+        )
+      })
+    assert.equal((await send('')).status, 401)
     assert.equal(
       (
         await owner.embyShows({
           request: new Request(
-            "https://paddock.thescudders.org/api/admin/emby/shows?libraryId=tv",
-          ),
+            'https://paddock.thescudders.org/api/admin/emby/shows?libraryId=tv'
+          )
         })
       ).status,
-      401,
-    );
+      401
+    )
     assert.equal(
-      (await send("user_signed_in", "https://attacker.invalid")).status,
-      403,
-    );
-    assert.equal(inferenceCalls, 0);
-    assert.equal((await send("user_signed_in")).status, 202);
-    assert.equal(inferenceCalls, 1);
+      (await send('user_signed_in', 'https://attacker.invalid')).status,
+      403
+    )
+    assert.equal(inferenceCalls, 0)
+    assert.equal((await send('user_signed_in')).status, 202)
+    assert.equal(inferenceCalls, 1)
   } finally {
-    guardOverrides.current = undefined;
-    useServices(undefined);
-    f.close();
+    guardOverrides.current = undefined
+    useServices(undefined)
+    f.close()
   }
-});
-test("without sign-in settings all admin APIs fail closed", async () => {
-  const f = await fixture();
-  useServices({ store: f.store, config } as unknown as Services);
+})
+test('without sign-in settings all admin APIs fail closed', async () => {
+  const f = await fixture()
+  useServices({ store: f.store, config } as unknown as Services)
   guardOverrides.current = {
     betterAuth: async () => {
-      throw new Error("Invalid environment variables: BETTER_AUTH_SECRET");
+      throw new Error('Invalid environment variables: BETTER_AUTH_SECRET')
     },
-    config: { appUrl: "https://paddock.thescudders.org" },
-  };
+    config: { appUrl: 'https://paddock.thescudders.org' }
+  }
   try {
     const response = await owner.status({
-      request: new Request("https://paddock.thescudders.org/api/admin/status"),
-    });
-    assert.equal(response.status, 503);
+      request: new Request('https://paddock.thescudders.org/api/admin/status')
+    })
+    assert.equal(response.status, 503)
     assert.equal(
       (
         await owner.embyShows({
           request: new Request(
-            "https://paddock.thescudders.org/api/admin/emby/shows?libraryId=tv",
-          ),
+            'https://paddock.thescudders.org/api/admin/emby/shows?libraryId=tv'
+          )
         })
       ).status,
-      503,
-    );
+      503
+    )
   } finally {
-    guardOverrides.current = undefined;
-    useServices(undefined);
-    f.close();
+    guardOverrides.current = undefined
+    useServices(undefined)
+    f.close()
   }
-});
-test("rendered Singapore sprint output is an actual 4K PNG and SVG uses paths instead of system fonts", async () => {
-  const f = await fixture();
+})
+test('rendered Singapore sprint output is an actual 4K PNG and SVG uses paths instead of system fonts', async () => {
+  const f = await fixture()
   try {
-    await seedCalendars(f.store, root);
-    const artwork = new Artwork(f.store, root, path.join(root, "data"));
-    const event = (await f.store.event("2026-singapore"))!;
-    const svg = await artwork.svg(event, "sprint-qualifying");
-    assert.ok(svg.includes("<path"));
-    assert.ok(svg.includes("data:image/png;base64,"));
-    assert.equal(svg.includes("<text"), false);
-    const image = await artwork.png(event, "sprint-qualifying", 3840);
-    const metadata = await sharp(image).metadata();
-    assert.equal(metadata.width, 3840);
-    assert.equal(metadata.height, 2160);
-    assert.equal(metadata.format, "png");
+    await seedCalendars(f.store, root)
+    const artwork = new Artwork(f.store, root, path.join(root, 'data'))
+    const event = (await f.store.event('2026-singapore'))!
+    const svg = await artwork.svg(event, 'sprint-qualifying')
+    assert.ok(svg.includes('<path'))
+    assert.ok(svg.includes('data:image/png;base64,'))
+    assert.equal(svg.includes('<text'), false)
+    const image = await artwork.png(event, 'sprint-qualifying', 3840)
+    const metadata = await sharp(image).metadata()
+    assert.equal(metadata.width, 3840)
+    assert.equal(metadata.height, 2160)
+    assert.equal(metadata.format, 'png')
   } finally {
-    f.close();
+    f.close()
   }
-});
+})
 
-test("Emby selection persists a show and inspects only its episodes across seasons", async () => {
-  const f = await fixture();
-  await seedCalendars(f.store, root);
+test('Emby selection persists a show and inspects only its episodes across seasons', async () => {
+  const f = await fixture()
+  await seedCalendars(f.store, root)
   const emby = new Emby(
     f.store,
     {} as Artwork,
-    "http://isolated-emby.invalid",
-    "fixture",
+    'http://isolated-emby.invalid',
+    'fixture',
     (async (input) => {
-      const url = new URL(String(input));
-      if (url.pathname === "/Library/VirtualFolders/Query")
+      const url = new URL(String(input))
+      if (url.pathname === '/Library/VirtualFolders/Query')
+        return Response.json({
+          Items: [{ ItemId: 'tv', Name: 'TV shows', CollectionType: 'tvshows' }]
+        })
+      if (url.searchParams.get('IncludeItemTypes') === 'Series') {
+        assert.equal(url.searchParams.get('ParentId'), 'tv')
         return Response.json({
           Items: [
-            { ItemId: "tv", Name: "TV shows", CollectionType: "tvshows" },
-          ],
-        });
-      if (url.searchParams.get("IncludeItemTypes") === "Series") {
-        assert.equal(url.searchParams.get("ParentId"), "tv");
-        return Response.json({
-          Items: [
-            { Id: "f1", Name: "Formula 1", Path: "/tv/Formula 1" },
-            { Id: "other", Name: "Other show" },
-          ],
-        });
+            { Id: 'f1', Name: 'Formula 1', Path: '/tv/Formula 1' },
+            { Id: 'other', Name: 'Other show' }
+          ]
+        })
       }
-      assert.equal(url.searchParams.get("ParentId"), "f1");
-      assert.equal(url.searchParams.get("Recursive"), "true");
+      assert.equal(url.searchParams.get('ParentId'), 'f1')
+      assert.equal(url.searchParams.get('Recursive'), 'true')
       return Response.json({
         Items: [
           {
-            Id: "episode",
-            Name: "Episode 1",
-            Path: "/tv/Formula 1/Season 2026/Singapore/Sprint Qualifying/video.mkv",
-          },
-        ],
-      });
-    }) as typeof fetch,
-  );
+            Id: 'episode',
+            Name: 'Episode 1',
+            Path: '/tv/Formula 1/Season 2026/Singapore/Sprint Qualifying/video.mkv'
+          }
+        ]
+      })
+    }) as typeof fetch
+  )
   useServices({
     store: f.store,
     emby,
     router: {} as OpenRouter,
     jobs: { autoGenerate: async () => {} },
-    config,
-  } as unknown as Services);
+    config
+  } as unknown as Services)
   guardOverrides.current = {
-    identity: () => ({ userId: "fixture-owner", isAuthenticated: true }),
-    config: { appUrl: "https://paddock.test" },
-  };
+    identity: () => ({ userId: 'fixture-owner', isAuthenticated: true }),
+    config: { appUrl: 'https://paddock.test' }
+  }
   const request = (route: string, body?: unknown) => ({
     request: new Request(
       `https://paddock.test/api/admin/${route}`,
       body
         ? {
-            method: "POST",
+            method: 'POST',
             headers: {
-              Origin: "https://paddock.test",
-              "Content-Type": "application/json",
+              Origin: 'https://paddock.test',
+              'Content-Type': 'application/json'
             },
-            body: JSON.stringify(body),
+            body: JSON.stringify(body)
           }
-        : undefined,
-    ),
-  });
+        : undefined
+    )
+  })
   try {
     assert.deepEqual(
-      await (await owner.embyShows(request("emby/shows?libraryId=tv"))).json(),
+      await (await owner.embyShows(request('emby/shows?libraryId=tv'))).json(),
       [
-        { id: "f1", name: "Formula 1", path: "/tv/Formula 1" },
-        { id: "other", name: "Other show" },
-      ],
-    );
+        { id: 'f1', name: 'Formula 1', path: '/tv/Formula 1' },
+        { id: 'other', name: 'Other show' }
+      ]
+    )
     const settings = {
       ...(await f.store.settings()),
-      embyLibraryId: "tv",
-      embySeriesId: "f1",
-    };
+      embyLibraryId: 'tv',
+      embySeriesId: 'f1'
+    }
     assert.equal(
-      (await owner.settings(request("settings", settings))).status,
-      200,
-    );
-    const status = await (await owner.status(request("status"))).json();
-    assert.equal(status.settings.embySeriesId, "f1");
-    const response = await owner.embyCandidates(request("emby/candidates"));
-    assert.equal(response.status, 200);
-    const candidates = await response.json();
+      (await owner.settings(request('settings', settings))).status,
+      200
+    )
+    const status = await (await owner.status(request('status'))).json()
+    assert.equal(status.settings.embySeriesId, 'f1')
+    const response = await owner.embyCandidates(request('emby/candidates'))
+    assert.equal(response.status, 200)
+    const candidates = await response.json()
     assert.deepEqual(
       candidates.map((item: { itemId: string }) => item.itemId),
-      ["episode"],
-    );
+      ['episode']
+    )
     assert.deepEqual(candidates[0].candidates, [
-      { eventId: "2026-singapore", session: "sprint-qualifying", score: 100 },
-    ]);
-    await f.store.set("settings", {
+      { eventId: '2026-singapore', session: 'sprint-qualifying', score: 100 }
+    ])
+    await f.store.set('settings', {
       ...settings,
-      embySeriesId: "removed-show",
-    });
-    const stale = await owner.embyCandidates(request("emby/candidates"));
-    assert.equal(stale.status, 500);
-    assert.match((await stale.json()).error, /no longer in this library/);
-    assert.equal((await owner.embyShows(request("emby/shows"))).status, 400);
+      embySeriesId: 'removed-show'
+    })
+    const stale = await owner.embyCandidates(request('emby/candidates'))
+    assert.equal(stale.status, 500)
+    assert.match((await stale.json()).error, /no longer in this library/)
+    assert.equal((await owner.embyShows(request('emby/shows'))).status, 400)
   } finally {
-    guardOverrides.current = undefined;
-    useServices(undefined);
-    f.close();
+    guardOverrides.current = undefined
+    useServices(undefined)
+    f.close()
   }
-});
+})
 
-test("Emby show browsing includes shows beyond the first page and keeps legacy library settings", async () => {
-  const f = await fixture();
+test('Emby show browsing includes shows beyond the first page and keeps legacy library settings', async () => {
+  const f = await fixture()
   const emby = new Emby(
     f.store,
     {} as Artwork,
-    "http://isolated-emby.invalid",
-    "fixture",
+    'http://isolated-emby.invalid',
+    'fixture',
     (async (input) => {
-      const url = new URL(String(input));
-      const start = Number(url.searchParams.get("StartIndex"));
+      const url = new URL(String(input))
+      const start = Number(url.searchParams.get('StartIndex'))
       return Response.json({
         Items:
           start === 0
             ? Array.from({ length: 200 }, (_, i) => ({
                 Id: `show-${i}`,
-                Name: `Show ${i}`,
+                Name: `Show ${i}`
               }))
-            : [{ Id: "f1", Name: "Formula 1" }],
-        TotalRecordCount: 201,
-      });
-    }) as typeof fetch,
-  );
+            : [{ Id: 'f1', Name: 'Formula 1' }],
+        TotalRecordCount: 201
+      })
+    }) as typeof fetch
+  )
   try {
-    const shows = await emby.shows("tv");
-    assert.equal(shows.length, 201);
+    const shows = await emby.shows('tv')
+    assert.equal(shows.length, 201)
     assert.deepEqual(shows.at(-1), {
-      id: "f1",
-      name: "Formula 1",
-      path: undefined,
-    });
-    await f.store.set("settings", { embyLibraryId: "legacy-f1" });
-    assert.equal((await f.store.settings()).embyLibraryId, "legacy-f1");
-    assert.equal((await f.store.settings()).embySeriesId, "");
+      id: 'f1',
+      name: 'Formula 1',
+      path: undefined
+    })
+    await f.store.set('settings', { embyLibraryId: 'legacy-f1' })
+    assert.equal((await f.store.settings()).embyLibraryId, 'legacy-f1')
+    assert.equal((await f.store.settings()).embySeriesId, '')
   } finally {
-    f.close();
+    f.close()
   }
-});
+})
 
-test("large saved backgrounds load through thumbnail and 4K image endpoints", async () => {
-  const f = await fixture();
-  const dataDir = await mkdtemp(path.join(tmpdir(), "paddock-large-image-"));
+test('large saved backgrounds load through thumbnail and 4K image endpoints', async () => {
+  const f = await fixture()
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'paddock-large-image-'))
   try {
-    await seedCalendars(f.store, root);
-    await cp(path.join(root, "data/fonts"), path.join(dataDir, "fonts"), {
-      recursive: true,
-    });
+    await seedCalendars(f.store, root)
+    await cp(path.join(root, 'data/fonts'), path.join(dataDir, 'fonts'), {
+      recursive: true
+    })
     // Detailed provider output can exceed libxml's 10 MB attribute limit
     // once embedded as base64. Seeded noise keeps this fixture reproducible.
-    const pixels = Buffer.alloc(2304 * 1296 * 3);
-    let seed = 42;
+    const pixels = Buffer.alloc(2304 * 1296 * 3)
+    let seed = 42
     for (let index = 0; index < pixels.length; index++) {
-      seed ^= seed << 13;
-      seed ^= seed >>> 17;
-      seed ^= seed << 5;
-      pixels[index] = seed & 255;
+      seed ^= seed << 13
+      seed ^= seed >>> 17
+      seed ^= seed << 5
+      pixels[index] = seed & 255
     }
     // A known patch ensures the result includes the saved background pixels.
     for (let y = 600; y < 700; y++)
       for (let x = 1100; x < 1200; x++)
-        pixels.set([33, 77, 121], (y * 2304 + x) * 3);
+        pixels.set([33, 77, 121], (y * 2304 + x) * 3)
     const background = await sharp(pixels, {
-      raw: { width: 2304, height: 1296, channels: 3 },
+      raw: { width: 2304, height: 1296, channels: 3 }
     })
       .png()
-      .toBuffer();
-    assert.ok(background.toString("base64").length > 10_000_000);
-    const file = path.join(dataDir, "large.png");
-    await writeFile(file, background);
-    await f.store.saveBackground("melbourne:2026", file, "large-background");
-    const artwork = new Artwork(f.store, root, dataDir);
-    useServices({ store: f.store, artwork } as Services);
-    const event = (await f.store.event("2026-australian"))!;
-    const entry = await artwork.libraryEvent(event);
-    assert.equal(entry.backgroundReady, true);
+      .toBuffer()
+    assert.ok(background.toString('base64').length > 10_000_000)
+    const file = path.join(dataDir, 'large.png')
+    await writeFile(file, background)
+    await f.store.saveBackground('melbourne:2026', file, 'large-background')
+    const artwork = new Artwork(f.store, root, dataDir)
+    useServices({ store: f.store, artwork } as Services)
+    const event = (await f.store.event('2026-australian'))!
+    const entry = await artwork.libraryEvent(event)
+    assert.equal(entry.backgroundReady, true)
     for (const variant of entry.images) {
       for (const [url, width, height] of [
         [variant.thumbnail, 640, 360],
-        [variant.png, 3840, 2160],
+        [variant.png, 3840, 2160]
       ] as const) {
         const response = await image(new Request(`http://localhost${url}`), {
-          season: "2026",
-          slug: "australian",
-          file: `${variant.session}.png`,
-        });
+          season: '2026',
+          slug: 'australian',
+          file: `${variant.session}.png`
+        })
         assert.equal(
           response.status,
           200,
-          response.ok ? "Expected a rendered PNG" : await response.text(),
-        );
-        assert.equal(response.headers.get("Content-Type"), "image/png");
-        const bytes = await response.arrayBuffer();
-        const metadata = await sharp(bytes).metadata();
-        assert.equal(metadata.width, width);
-        assert.equal(metadata.height, height);
-        assert.equal(metadata.format, "png");
+          response.ok ? 'Expected a rendered PNG' : await response.text()
+        )
+        assert.equal(response.headers.get('Content-Type'), 'image/png')
+        const bytes = await response.arrayBuffer()
+        const metadata = await sharp(bytes).metadata()
+        assert.equal(metadata.width, width)
+        assert.equal(metadata.height, height)
+        assert.equal(metadata.format, 'png')
         const center = await sharp(bytes)
           .extract({ left: width / 2, top: height / 2, width: 1, height: 1 })
           .removeAlpha()
           .raw()
-          .toBuffer();
-        assert.deepEqual(center, Buffer.from([33, 77, 121]));
+          .toBuffer()
+        assert.deepEqual(center, Buffer.from([33, 77, 121]))
       }
     }
   } finally {
-    useServices(undefined);
-    await rm(dataDir, { recursive: true, force: true });
-    f.close();
+    useServices(undefined)
+    await rm(dataDir, { recursive: true, force: true })
+    f.close()
   }
-});
+})

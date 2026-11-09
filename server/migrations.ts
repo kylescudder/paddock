@@ -1,11 +1,11 @@
-import postgres, { type ReservedSql, type TransactionSql } from "postgres";
-import { readMigrationFiles } from "drizzle-orm/migrator";
-import path from "node:path";
+import postgres, { type ReservedSql, type TransactionSql } from 'postgres'
+import { readMigrationFiles } from 'drizzle-orm/migrator'
+import path from 'node:path'
 
-const root = path.resolve(import.meta.dir, "..");
+const root = path.resolve(import.meta.dir, '..')
 const migrations = readMigrationFiles({
-  migrationsFolder: path.join(root, "drizzle"),
-});
+  migrationsFolder: path.join(root, 'drizzle')
+})
 
 // Compare catalog structure, never application rows. Build the frozen generated
 // baseline in a transaction-local reference schema, then discard it. This catches
@@ -29,126 +29,126 @@ async function structure(sql: ReservedSql | TransactionSql, schema: string) {
     (SELECT count(*)::int FROM pg_trigger t WHERE t.tgrelid=c.oid AND NOT t.tgisinternal) AS triggers,
     (SELECT count(*)::int FROM pg_rewrite r WHERE r.ev_class=c.oid) AS rules
     FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-    WHERE n.nspname=${schema} AND c.relkind IN ('r','p','v','m','f') ORDER BY c.relname`;
+    WHERE n.nspname=${schema} AND c.relkind IN ('r','p','v','m','f') ORDER BY c.relname`
 }
 
 async function adopt(tx: ReservedSql) {
   // A reserved Postgres.js client has no begin() at runtime. Explicit boundaries
   // keep validation on the locked session; rollback discards reference DDL.
-  await tx`BEGIN`;
+  await tx`BEGIN`
   try {
     // No runtime USAGE on the journal schema, even if the host grants default
     // table privileges globally. Fresh installs and adoption share this boundary.
-    await tx`CREATE SCHEMA IF NOT EXISTS drizzle`;
-    await tx`REVOKE ALL ON SCHEMA drizzle FROM PUBLIC`;
+    await tx`CREATE SCHEMA IF NOT EXISTS drizzle`
+    await tx`REVOKE ALL ON SCHEMA drizzle FROM PUBLIC`
     const [runtime] = await tx`SELECT rolname FROM pg_roles
-      WHERE rolname=current_database() || '_runtime'`;
+      WHERE rolname=current_database() || '_runtime'`
     if (runtime)
       await tx.unsafe(
-        `REVOKE ALL ON SCHEMA drizzle FROM "${String(runtime.rolname).replaceAll('"', '""')}"`,
-      );
+        `REVOKE ALL ON SCHEMA drizzle FROM "${String(runtime.rolname).replaceAll('"', '""')}"`
+      )
 
     const [journal] =
-      await tx`SELECT to_regclass('drizzle.__drizzle_migrations') AS name`;
+      await tx`SELECT to_regclass('drizzle.__drizzle_migrations') AS name`
     const applied = journal.name
       ? await tx`SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY created_at, id`
-      : [];
+      : []
     for (const [i, row] of applied.entries()) {
       if (
         row.hash !== migrations[i]?.hash ||
         Number(row.created_at) !== migrations[i]?.folderMillis
       )
         throw new Error(
-          "Drizzle migration history differs from this release; refusing migration",
-        );
+          'Drizzle migration history differs from this release; refusing migration'
+        )
     }
     if (applied.length) {
-      await tx`COMMIT`;
-      return;
+      await tx`COMMIT`
+      return
     }
 
-    const existing = await structure(tx, "public");
+    const existing = await structure(tx, 'public')
     if (!existing.length) {
-      await tx`COMMIT`;
-      return; // drizzle-kit applies the generated initial DDL.
+      await tx`COMMIT`
+      return // drizzle-kit applies the generated initial DDL.
     }
 
     // Unique name, quoted; the schema and its objects are removed before commit.
     const reference =
-      "paddock_baseline_" + crypto.randomUUID().replaceAll("-", "");
-    await tx.unsafe(`CREATE SCHEMA "${reference}"`);
-    await tx.unsafe(`SET LOCAL search_path TO "${reference}", pg_catalog`);
-    for (const statement of migrations[0]!.sql) await tx.unsafe(statement);
-    const expected = await structure(tx, reference);
+      'paddock_baseline_' + crypto.randomUUID().replaceAll('-', '')
+    await tx.unsafe(`CREATE SCHEMA "${reference}"`)
+    await tx.unsafe(`SET LOCAL search_path TO "${reference}", pg_catalog`)
+    for (const statement of migrations[0]!.sql) await tx.unsafe(statement)
+    const expected = await structure(tx, reference)
     if (JSON.stringify(existing) !== JSON.stringify(expected))
       throw new Error(
-        "Existing schema is incompatible with the Paddock baseline; no adoption recorded",
-      );
-    await tx.unsafe(`DROP SCHEMA "${reference}" CASCADE`);
-    await tx`SET LOCAL search_path TO public`;
+        'Existing schema is incompatible with the Paddock baseline; no adoption recorded'
+      )
+    await tx.unsafe(`DROP SCHEMA "${reference}" CASCADE`)
+    await tx`SET LOCAL search_path TO public`
     // Match drizzle-kit's journal format. Only a fully validated legacy schema
     // receives the baseline hash; its initial CREATE TABLE statements never run.
     await tx`CREATE TABLE IF NOT EXISTS drizzle.__drizzle_migrations (
       id SERIAL PRIMARY KEY, hash text NOT NULL, created_at bigint
-    )`;
+    )`
     await tx`INSERT INTO drizzle.__drizzle_migrations (hash, created_at)
-      VALUES (${migrations[0]!.hash}, ${migrations[0]!.folderMillis})`;
-    await tx`COMMIT`;
+      VALUES (${migrations[0]!.hash}, ${migrations[0]!.folderMillis})`
+    await tx`COMMIT`
   } catch (error) {
-    await tx`ROLLBACK`;
-    throw error;
+    await tx`ROLLBACK`
+    throw error
   }
 }
 
 export async function migrate(url: string) {
-  const pool = postgres(url, { max: 1, idle_timeout: 20, connect_timeout: 10 });
-  let sql: ReservedSql | undefined;
+  const pool = postgres(url, { max: 1, idle_timeout: 20, connect_timeout: 10 })
+  let sql: ReservedSql | undefined
   try {
-    sql = await pool.reserve();
+    sql = await pool.reserve()
     // Serialize owner migration commands, including the separate one-slot kit
     // client. The runtime role/pool is never involved.
-    await sql`SELECT pg_advisory_lock(714203, 1)`;
-    await adopt(sql);
+    await sql`SELECT pg_advisory_lock(714203, 1)`
+    await adopt(sql)
     const child = Bun.spawn(
       [
         process.execPath,
-        "--bun",
-        "node_modules/drizzle-kit/bin.cjs",
-        "migrate",
+        '--bun',
+        'node_modules/drizzle-kit/bin.cjs',
+        'migrate'
       ],
       {
         cwd: root,
-        env: { ...process.env, DATABASE_URL: url, DATABASE_PASSWORD_FILE: "" },
-        stdout: "pipe",
-        stderr: "pipe",
-      },
-    );
+        env: { ...process.env, DATABASE_URL: url, DATABASE_PASSWORD_FILE: '' },
+        stdout: 'pipe',
+        stderr: 'pipe'
+      }
+    )
     // Consume diagnostics without emitting credentials or SQL row values.
     const [code] = await Promise.all([
       child.exited,
       new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-    ]);
+      new Response(child.stderr).text()
+    ])
     if (code !== 0)
       throw new Error(
-        `drizzle-kit migrate failed (exit ${code}); current app can remain running`,
-      );
-    await sql`REVOKE ALL ON ALL TABLES IN SCHEMA drizzle FROM PUBLIC`;
-    await sql`REVOKE ALL ON ALL SEQUENCES IN SCHEMA drizzle FROM PUBLIC`;
+        `drizzle-kit migrate failed (exit ${code}); current app can remain running`
+      )
+    await sql`REVOKE ALL ON ALL TABLES IN SCHEMA drizzle FROM PUBLIC`
+    await sql`REVOKE ALL ON ALL SEQUENCES IN SCHEMA drizzle FROM PUBLIC`
     const [runtime] =
-      await sql`SELECT rolname FROM pg_roles WHERE rolname=current_database() || '_runtime'`;
+      await sql`SELECT rolname FROM pg_roles WHERE rolname=current_database() || '_runtime'`
     if (runtime) {
-      const role = '"' + String(runtime.rolname).replaceAll('"', '""') + '"';
+      const role = '"' + String(runtime.rolname).replaceAll('"', '""') + '"'
       await sql.unsafe(
-        `REVOKE ALL ON ALL TABLES IN SCHEMA drizzle FROM ${role}`,
-      );
+        `REVOKE ALL ON ALL TABLES IN SCHEMA drizzle FROM ${role}`
+      )
       await sql.unsafe(
-        `REVOKE ALL ON ALL SEQUENCES IN SCHEMA drizzle FROM ${role}`,
-      );
+        `REVOKE ALL ON ALL SEQUENCES IN SCHEMA drizzle FROM ${role}`
+      )
     }
   } finally {
     // Closing the reserved connection also releases the session advisory lock.
-    sql?.release();
-    await pool.end();
+    sql?.release()
+    await pool.end()
   }
 }
