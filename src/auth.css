@@ -5,22 +5,22 @@
   stylesheet already defines `--border` and `--muted`. Utilities are unlayered
   so they win over Paddock's element defaults (e.g. `button { background }`).
 */
-@import "tailwindcss/theme.css" layer(theme);
-@import "tailwindcss/utilities.css" source(none);
-@import "tw-animate-css";
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' source(none);
+@import 'tw-animate-css';
 
-@source "./components/auth";
-@source "./components/ui";
-@source "./components/BetterAuthUserMenu.tsx";
-@source "./routes/auth.$path.tsx";
-@source "./routes/profile.tsx";
+@source './components/auth';
+@source './components/ui';
+@source './components/BetterAuthUserMenu.tsx';
+@source './routes/auth.$path.tsx';
+@source './routes/profile.tsx';
 
 /* Paddock is a dark interface, so shadcn's dark variants always apply. */
 @custom-variant dark (&:is(*));
 
 @theme inline {
-  --font-sans: "DM Sans", sans-serif;
-  --font-heading: "Space Grotesk", sans-serif;
+  --font-sans: 'DM Sans', sans-serif;
+  --font-heading: 'Space Grotesk', sans-serif;
   --color-background: var(--ba-background);
   --color-foreground: var(--ba-foreground);
   --color-card: var(--ba-card);

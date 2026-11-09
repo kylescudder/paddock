@@ -1,6 +1,8 @@
 ARG BUN_IMAGE=oven/bun@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d
 FROM ${BUN_IMAGE} AS build
 WORKDIR /app
+# Do not install the Git pre-commit hook in image builds.
+ENV HUSKY=0
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --network-concurrency 8
 COPY . .
@@ -14,7 +16,8 @@ ENV PADDOCK_REVISION=$PADDOCK_REVISION
 LABEL org.opencontainers.image.source="https://github.com/kylescudder/paddock"
 LABEL org.opencontainers.image.revision=$PADDOCK_REVISION
 COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile --production --network-concurrency 8
+# Skip lifecycle scripts: the Husky prepare script needs a devDependency.
+RUN bun install --frozen-lockfile --production --ignore-scripts --network-concurrency 8
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/server ./server
 COPY --from=build /app/drizzle ./drizzle

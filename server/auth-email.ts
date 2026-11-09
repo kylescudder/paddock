@@ -1,11 +1,11 @@
-import { createHash } from "node:crypto";
-import { sql } from "drizzle-orm";
-import { APIError } from "better-auth/api";
-import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import type * as schema from "./schema.ts";
-import { authEmailLimit } from "./auth-schema.ts";
+import { createHash } from 'node:crypto'
+import { sql } from 'drizzle-orm'
+import { APIError } from 'better-auth/api'
+import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
+import type * as schema from './schema.ts'
+import { authEmailLimit } from './auth-schema.ts'
 
-export type AuthDatabase = PostgresJsDatabase<typeof schema>;
+export type AuthDatabase = PostgresJsDatabase<typeof schema>
 
 class RecipientThrottled extends Error {}
 
@@ -22,21 +22,21 @@ class RecipientThrottled extends Error {}
 export async function reserveEmailDelivery(
   database: AuthDatabase,
   email: string,
-  dailyLimit: number,
+  dailyLimit: number
 ) {
-  const recipient = createHash("sha256")
+  const recipient = createHash('sha256')
     .update(email.trim().toLowerCase())
-    .digest("hex");
-  const now = new Date();
+    .digest('hex')
+  const now = new Date()
   const limits = [
-    { key: "global:day", seconds: 86400, max: dailyLimit },
+    { key: 'global:day', seconds: 86400, max: dailyLimit },
     { key: `recipient:${recipient}:hour`, seconds: 3600, max: 5 },
-    { key: `recipient:${recipient}:minute`, seconds: 60, max: 1 },
-  ];
+    { key: `recipient:${recipient}:minute`, seconds: 60, max: 1 }
+  ]
   try {
     await database.transaction(async (transaction) => {
       for (const limit of limits) {
-        const expired = sql`${authEmailLimit.windowStartedAt} <= ${new Date(now.getTime() - limit.seconds * 1000).toISOString()}`;
+        const expired = sql`${authEmailLimit.windowStartedAt} <= ${new Date(now.getTime() - limit.seconds * 1000).toISOString()}`
         const [reserved] = await transaction
           .insert(authEmailLimit)
           .values({ key: limit.key, count: 1, windowStartedAt: now })
@@ -44,53 +44,53 @@ export async function reserveEmailDelivery(
             target: authEmailLimit.key,
             set: {
               count: sql`CASE WHEN ${expired} THEN 1 ELSE ${authEmailLimit.count} + 1 END`,
-              windowStartedAt: sql`CASE WHEN ${expired} THEN ${now.toISOString()}::timestamptz ELSE ${authEmailLimit.windowStartedAt} END`,
+              windowStartedAt: sql`CASE WHEN ${expired} THEN ${now.toISOString()}::timestamptz ELSE ${authEmailLimit.windowStartedAt} END`
             },
-            setWhere: sql`${expired} OR ${authEmailLimit.count} < ${limit.max}`,
+            setWhere: sql`${expired} OR ${authEmailLimit.count} < ${limit.max}`
           })
-          .returning({ count: authEmailLimit.count });
+          .returning({ count: authEmailLimit.count })
         if (!reserved) {
-          if (limit.key !== "global:day") throw new RecipientThrottled();
-          throw new APIError("TOO_MANY_REQUESTS", {
-            message: "Please wait before requesting another sign-in email.",
-          });
+          if (limit.key !== 'global:day') throw new RecipientThrottled()
+          throw new APIError('TOO_MANY_REQUESTS', {
+            message: 'Please wait before requesting another sign-in email.'
+          })
         }
       }
-    });
+    })
   } catch (error) {
-    if (error instanceof RecipientThrottled) return false;
-    throw error;
+    if (error instanceof RecipientThrottled) return false
+    throw error
   }
-  return true;
+  return true
 }
 
-export type MailConfig = { apiKey: string; from: string };
+export type MailConfig = { apiKey: string; from: string }
 
 async function deliver(
   config: MailConfig,
   email: string,
-  message: { subject: string; text: string; html: string },
+  message: { subject: string; text: string; html: string }
 ) {
   try {
-    const response = await fetch("https://api.brevo.com/v3/smtp/email", {
-      method: "POST",
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
       signal: AbortSignal.timeout(8000),
-      headers: { "api-key": config.apiKey, "Content-Type": "application/json" },
+      headers: { 'api-key': config.apiKey, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        sender: { email: config.from, name: "Paddock" },
+        sender: { email: config.from, name: 'Paddock' },
         to: [{ email }],
         subject: message.subject,
         textContent: message.text,
         htmlContent: message.html,
-        tags: ["paddock-auth"],
-      }),
-    });
-    if (!response.ok) throw new Error("Provider rejected sign-in email");
+        tags: ['paddock-auth']
+      })
+    })
+    if (!response.ok) throw new Error('Provider rejected sign-in email')
   } catch {
     // Never log provider responses, API keys, codes, links or message content.
-    throw new APIError("SERVICE_UNAVAILABLE", {
-      message: "The sign-in email could not be sent. Please try again later.",
-    });
+    throw new APIError('SERVICE_UNAVAILABLE', {
+      message: 'The sign-in email could not be sent. Please try again later.'
+    })
   }
 }
 
@@ -98,38 +98,38 @@ async function deliver(
 // and many (Gmail included) do not render SVG, so the logo is a PNG served by
 // the app. Colours follow Paddock's pit-wall palette and racing-red accent.
 const brand = {
-  name: "Paddock",
-  night: "#101111",
-  red: "#f45540",
-  redText: "#c2321f",
-  ink: "#101111",
-  muted: "#5f6661",
-  footer: "#a8b0a5",
-  warm: "#edece7",
-};
+  name: 'Paddock',
+  night: '#101111',
+  red: '#f45540',
+  redText: '#c2321f',
+  ink: '#101111',
+  muted: '#5f6661',
+  footer: '#a8b0a5',
+  warm: '#edece7'
+}
 
 const escapeHtml = (value: string) =>
   value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
 
 function layout({
   origin,
   preheader,
   heading,
-  body,
+  body
 }: {
-  origin: string;
-  preheader: string;
-  heading: string;
-  body: string;
+  origin: string
+  preheader: string
+  heading: string
+  body: string
 }) {
-  const site = new URL(origin);
+  const site = new URL(origin)
   const font =
-    "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
-  const display = `'Space Grotesk',${font}`;
+    "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
+  const display = `'Space Grotesk',${font}`
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -162,84 +162,84 @@ You’re receiving this because this address can manage the ${brand.name} artwor
 </td></tr>
 </table>
 </body>
-</html>`;
+</html>`
 }
 
 const paragraph = (text: string, color: string = brand.ink) =>
-  `<p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:${color}">${text}</p>`;
+  `<p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:${color}">${text}</p>`
 
 export function renderCodeEmail(origin: string, otp: string) {
   // Only validated generated six-digit codes are interpolated into the template.
-  if (!/^\d{6}$/.test(otp)) throw new Error("Invalid sign-in code format");
+  if (!/^\d{6}$/.test(otp)) throw new Error('Invalid sign-in code format')
   return {
     subject: `${otp} is your Paddock sign-in code`,
     text: `Your ${brand.name} sign-in code is ${otp}.\n\nIt expires in 10 minutes and can be used once. If you did not request this code, ignore this email.\n\n${origin}`,
     html: layout({
       origin,
       preheader: `Your sign-in code is ${otp}. It expires in 10 minutes.`,
-      heading: "Your sign-in code",
+      heading: 'Your sign-in code',
       body:
-        paragraph("Enter this code to open your Paddock owner workspace.") +
+        paragraph('Enter this code to open your Paddock owner workspace.') +
         `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 24px"><tr><td align="center" bgcolor="#fdf0ee" style="background:#fdf0ee;border:1px solid #f8c9c1;border-radius:10px;padding:20px 2px 20px 12px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:34px;font-weight:700;letter-spacing:10px;color:${brand.ink}">${otp}</td></tr></table>` +
-        paragraph("It expires in 10 minutes and can be used once.") +
+        paragraph('It expires in 10 minutes and can be used once.') +
         paragraph(
-          "If you didn’t request this code, you can ignore this email.",
-          brand.muted,
-        ),
-    }),
-  };
+          'If you didn’t request this code, you can ignore this email.',
+          brand.muted
+        )
+    })
+  }
 }
 
 export async function sendLoginEmail(
   config: MailConfig,
   origin: string,
   email: string,
-  otp: string,
+  otp: string
 ) {
-  await deliver(config, email, renderCodeEmail(origin, otp));
+  await deliver(config, email, renderCodeEmail(origin, otp))
 }
 
-export type LinkEmailKind = "magic-link" | "reset-password";
+export type LinkEmailKind = 'magic-link' | 'reset-password'
 
 const linkCopy: Record<
   LinkEmailKind,
   {
-    subject: string;
-    heading: string;
-    intro: string;
-    action: string;
-    expiry: string;
+    subject: string
+    heading: string
+    intro: string
+    action: string
+    expiry: string
   }
 > = {
-  "magic-link": {
-    subject: "Your Paddock sign-in link",
-    heading: "Sign in to Paddock",
-    intro: "Tap the button below to open your owner workspace.",
-    action: "Sign in",
-    expiry: "This link expires in 10 minutes and can be used once.",
+  'magic-link': {
+    subject: 'Your Paddock sign-in link',
+    heading: 'Sign in to Paddock',
+    intro: 'Tap the button below to open your owner workspace.',
+    action: 'Sign in',
+    expiry: 'This link expires in 10 minutes and can be used once.'
   },
-  "reset-password": {
-    subject: "Set your Paddock password",
-    heading: "Set your password",
+  'reset-password': {
+    subject: 'Set your Paddock password',
+    heading: 'Set your password',
     intro:
-      "Tap the button below to choose a new password for your Paddock account.",
-    action: "Set password",
-    expiry: "This link expires in 30 minutes and can be used once.",
-  },
-};
+      'Tap the button below to choose a new password for your Paddock account.',
+    action: 'Set password',
+    expiry: 'This link expires in 30 minutes and can be used once.'
+  }
+}
 
 export function renderLinkEmail(
   origin: string,
   kind: LinkEmailKind,
-  url: string,
+  url: string
 ) {
   // Links are generated by Better Auth; refuse anything not on this origin so a
   // misconfiguration can never mail out a link to another site.
-  const parsed = new URL(url);
+  const parsed = new URL(url)
   if (parsed.origin !== origin)
-    throw new Error("Unexpected sign-in link origin");
-  const href = escapeHtml(parsed.href);
-  const copy = linkCopy[kind];
+    throw new Error('Unexpected sign-in link origin')
+  const href = escapeHtml(parsed.href)
+  const copy = linkCopy[kind]
   return {
     subject: copy.subject,
     text: `${copy.intro}\n\n${parsed.href}\n\n${copy.expiry} If you did not request this, ignore this email.`,
@@ -253,14 +253,14 @@ export function renderLinkEmail(
         paragraph(copy.expiry) +
         paragraph(
           `Button not working? Copy this link into your browser:<br><a href="${href}" style="color:${brand.redText};word-break:break-all">${href}</a>`,
-          brand.muted,
+          brand.muted
         ) +
         paragraph(
-          "If you didn’t request this, you can ignore this email.",
-          brand.muted,
-        ),
-    }),
-  };
+          'If you didn’t request this, you can ignore this email.',
+          brand.muted
+        )
+    })
+  }
 }
 
 export async function sendLinkEmail(
@@ -268,7 +268,7 @@ export async function sendLinkEmail(
   origin: string,
   email: string,
   kind: LinkEmailKind,
-  url: string,
+  url: string
 ) {
-  await deliver(config, email, renderLinkEmail(origin, kind, url));
+  await deliver(config, email, renderLinkEmail(origin, kind, url))
 }

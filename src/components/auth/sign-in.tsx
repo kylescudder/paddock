@@ -1,60 +1,60 @@
-"use client";
+'use client'
 
 import {
   getAuthErrorCode,
   getAuthLinkURL,
   authMutationKeys,
   validateEmailAddress,
-  validateStringLength,
-} from "@better-auth-ui/core";
+  validateStringLength
+} from '@better-auth-ui/core'
 
 import {
   isPasskeyAutoFillEnabled,
-  withPasskeyAutoFill,
-} from "@better-auth-ui/core/plugins/passkey";
+  withPasskeyAutoFill
+} from '@better-auth-ui/core/plugins/passkey'
 import {
   AuthPrompts,
   useAuth,
   useFetchOptions,
-  useSignInEmail,
-} from "@better-auth-ui/react";
-import { useIsMutating } from "@tanstack/react-query";
-import { Eye, EyeOff } from "lucide-react";
-import { useState } from "react";
+  useSignInEmail
+} from '@better-auth-ui/react'
+import { useIsMutating } from '@tanstack/react-query'
+import { Eye, EyeOff } from 'lucide-react'
+import { useState } from 'react'
 
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
+  CardTitle
+} from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Field,
   FieldGroup,
   FieldLabel,
-  FieldSeparator,
-} from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+  FieldSeparator
+} from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupButton,
-  InputGroupInput,
-} from "@/components/ui/input-group";
-import { useSignInContinuation } from "@/lib/auth/use-sign-in-continuation";
-import { cn } from "cn";
-import { isAuthFormFieldInvalid, useAuthForm } from "./auth-form";
-import { LastUsedBadge } from "./last-login-method/last-used-badge";
-import { ProviderButtons, type SocialLayout } from "./provider-buttons";
-import { ReauthenticationNotice } from "./reauthentication";
+  InputGroupInput
+} from '@/components/ui/input-group'
+import { useSignInContinuation } from '@/lib/auth/use-sign-in-continuation'
+import { cn } from 'cn'
+import { isAuthFormFieldInvalid, useAuthForm } from './auth-form'
+import { LastUsedBadge } from './last-login-method/last-used-badge'
+import { ProviderButtons, type SocialLayout } from './provider-buttons'
+import { ReauthenticationNotice } from './reauthentication'
 
 export type SignInProps = {
-  className?: string;
-  socialLayout?: SocialLayout;
-  socialPosition?: "top" | "bottom";
-};
+  className?: string
+  socialLayout?: SocialLayout
+  socialPosition?: 'top' | 'bottom'
+}
 
 /**
  * Render the sign-in form UI with email/password, magic link, and social provider options.
@@ -67,7 +67,7 @@ export type SignInProps = {
 export function SignIn({
   className,
   socialLayout,
-  socialPosition = "bottom",
+  socialPosition = 'bottom'
 }: SignInProps) {
   const {
     authClient,
@@ -79,38 +79,38 @@ export function SignIn({
     redirectTo,
     viewPaths,
     navigate,
-    Link,
-  } = useAuth();
+    Link
+  } = useAuth()
 
-  const { fetchOptions, resetFetchOptions } = useFetchOptions();
-  const continueSignIn = useSignInContinuation();
+  const { fetchOptions, resetFetchOptions } = useFetchOptions()
+  const continueSignIn = useSignInContinuation()
 
   const { mutateAsync: signInEmail, isPending: signInEmailPending } =
     useSignInEmail(authClient, {
-      meta: { errorPresentation: "inline" },
+      meta: { errorPresentation: 'inline' },
       onError: () => resetFetchOptions(),
-      onSuccess: (data) => continueSignIn(data),
-    });
+      onSuccess: (data) => continueSignIn(data)
+    })
 
   const signInMutating = useIsMutating({
-    mutationKey: authMutationKeys.signIn.all,
-  });
+    mutationKey: authMutationKeys.signIn.all
+  })
   const signUpMutating = useIsMutating({
-    mutationKey: authMutationKeys.signUp.all,
-  });
-  const isPending = signInMutating + signUpMutating > 0;
+    mutationKey: authMutationKeys.signUp.all
+  })
+  const isPending = signInMutating + signUpMutating > 0
 
   const Captcha = plugins.find(
-    (plugin) => plugin.captchaComponent,
-  )?.captchaComponent;
+    (plugin) => plugin.captchaComponent
+  )?.captchaComponent
 
-  const passkeyAutoFill = isPasskeyAutoFillEnabled(plugins);
+  const passkeyAutoFill = isPasskeyAutoFillEnabled(plugins)
 
-  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false)
   const form = useAuthForm({
-    defaultValues: { email: "", password: "", rememberMe: false },
+    defaultValues: { email: '', password: '', rememberMe: false },
     onSubmit: async ({ value }) => {
-      const email = value.email.trim();
+      const email = value.email.trim()
       try {
         await signInEmail({
           email,
@@ -118,46 +118,46 @@ export function SignIn({
           ...(emailAndPassword?.rememberMe
             ? { rememberMe: value.rememberMe }
             : {}),
-          fetchOptions,
-        });
+          fetchOptions
+        })
       } catch (error) {
-        if (getAuthErrorCode(error) !== "EMAIL_NOT_VERIFIED") throw error;
+        if (getAuthErrorCode(error) !== 'EMAIL_NOT_VERIFIED') throw error
 
-        sessionStorage.setItem("better-auth-ui.verify-email", email);
+        sessionStorage.setItem('better-auth-ui.verify-email', email)
         navigate({
           to: getAuthLinkURL(
             `${basePaths.auth}/${viewPaths.auth.verifyEmail}`,
-            redirectTo,
-          ),
-        });
+            redirectTo
+          )
+        })
       }
-    },
-  });
+    }
+  })
 
   const showSeparator =
-    emailAndPassword?.enabled && socialProviders && socialProviders.length > 0;
+    emailAndPassword?.enabled && socialProviders && socialProviders.length > 0
 
   return (
-    <Card className={cn("w-full max-w-sm", className)}>
-      <AuthPrompts view="signIn" />
+    <Card className={cn('w-full max-w-sm', className)}>
+      <AuthPrompts view='signIn' />
       <ReauthenticationNotice />
       <CardHeader>
-        <CardTitle className="text-xl font-semibold">Owner sign-in</CardTitle>
+        <CardTitle className='text-xl font-semibold'>Owner sign-in</CardTitle>
         <CardDescription>
           Use your password, an emailed code or link, or a saved passkey.
         </CardDescription>
       </CardHeader>
 
       <CardContent>
-        <div className="flex flex-col gap-6">
-          {socialPosition === "top" && (
+        <div className='flex flex-col gap-6'>
+          {socialPosition === 'top' && (
             <>
               {socialProviders && socialProviders.length > 0 && (
-                <ProviderButtons socialLayout={socialLayout} view="signIn" />
+                <ProviderButtons socialLayout={socialLayout} view='signIn' />
               )}
 
               {showSeparator && (
-                <FieldSeparator className="*:data-[slot=field-separator-content]:bg-card m-0 flex items-center text-xs">
+                <FieldSeparator className='*:data-[slot=field-separator-content]:bg-card m-0 flex items-center text-xs'>
                   {localization.auth.or}
                 </FieldSeparator>
               )}
@@ -171,32 +171,30 @@ export function SignIn({
               >
                 <FieldGroup>
                   <form.AppField
-                    name="email"
+                    name='email'
                     validators={{
                       onChange: ({ value }) =>
                         validateEmailAddress(value, {
                           invalidMessage: localization.auth.invalidEmail,
-                          requiredMessage: localization.auth.fieldRequired,
-                        }),
+                          requiredMessage: localization.auth.fieldRequired
+                        })
                     }}
                   >
                     {(field) => {
-                      const isInvalid = isAuthFormFieldInvalid(
-                        field.state.meta,
-                      );
+                      const isInvalid = isAuthFormFieldInvalid(field.state.meta)
                       return (
                         <Field data-invalid={isInvalid}>
-                          <FieldLabel htmlFor="email">
+                          <FieldLabel htmlFor='email'>
                             {localization.auth.email}
                           </FieldLabel>
 
                           <Input
-                            id="email"
+                            id='email'
                             name={field.name}
-                            type="email"
+                            type='email'
                             autoComplete={withPasskeyAutoFill(
-                              "email",
-                              passkeyAutoFill,
+                              'email',
+                              passkeyAutoFill
                             )}
                             placeholder={localization.auth.emailPlaceholder}
                             required
@@ -210,47 +208,45 @@ export function SignIn({
                           />
                           <field.AuthFormFieldError />
                         </Field>
-                      );
+                      )
                     }}
                   </form.AppField>
 
                   <form.AppField
-                    name="password"
+                    name='password'
                     validators={{
                       onChange: ({ value }) =>
                         validateStringLength(value, {
                           maxLength: emailAndPassword?.maxPasswordLength,
                           maxLengthMessage: localization.auth.tooLong.replace(
-                            "{{max}}",
-                            String(emailAndPassword?.maxPasswordLength),
+                            '{{max}}',
+                            String(emailAndPassword?.maxPasswordLength)
                           ),
                           minLength: emailAndPassword?.minPasswordLength,
                           minLengthMessage: localization.auth.tooShort.replace(
-                            "{{min}}",
-                            String(emailAndPassword?.minPasswordLength),
+                            '{{min}}',
+                            String(emailAndPassword?.minPasswordLength)
                           ),
-                          requiredMessage: localization.auth.fieldRequired,
-                        }),
+                          requiredMessage: localization.auth.fieldRequired
+                        })
                     }}
                   >
                     {(field) => {
-                      const isInvalid = isAuthFormFieldInvalid(
-                        field.state.meta,
-                      );
+                      const isInvalid = isAuthFormFieldInvalid(field.state.meta)
                       return (
                         <Field data-invalid={isInvalid}>
-                          <FieldLabel htmlFor="password">
+                          <FieldLabel htmlFor='password'>
                             {localization.auth.password}
                           </FieldLabel>
 
                           <InputGroup>
                             <InputGroupInput
-                              id="password"
+                              id='password'
                               name={field.name}
-                              type={isPasswordVisible ? "text" : "password"}
+                              type={isPasswordVisible ? 'text' : 'password'}
                               autoComplete={withPasskeyAutoFill(
-                                "current-password",
-                                passkeyAutoFill,
+                                'current-password',
+                                passkeyAutoFill
                               )}
                               value={field.state.value}
                               onBlur={field.handleBlur}
@@ -267,9 +263,9 @@ export function SignIn({
                               aria-invalid={isInvalid}
                             />
 
-                            <InputGroupAddon align="inline-end">
+                            <InputGroupAddon align='inline-end'>
                               <InputGroupButton
-                                size="icon-xs"
+                                size='icon-xs'
                                 aria-label={
                                   isPasswordVisible
                                     ? localization.auth.hidePassword
@@ -281,7 +277,7 @@ export function SignIn({
                                     : localization.auth.showPassword
                                 }
                                 onClick={() => {
-                                  setIsPasswordVisible((visible) => !visible);
+                                  setIsPasswordVisible((visible) => !visible)
                                 }}
                               >
                                 {isPasswordVisible ? <EyeOff /> : <Eye />}
@@ -291,17 +287,17 @@ export function SignIn({
 
                           <field.AuthFormFieldError />
                         </Field>
-                      );
+                      )
                     }}
                   </form.AppField>
 
                   {emailAndPassword.rememberMe && (
-                    <form.AppField name="rememberMe">
+                    <form.AppField name='rememberMe'>
                       {(field) => (
-                        <Field className="my-1">
-                          <div className="flex items-center gap-3">
+                        <Field className='my-1'>
+                          <div className='flex items-center gap-3'>
                             <Checkbox
-                              id="rememberMe"
+                              id='rememberMe'
                               name={field.name}
                               checked={field.state.value}
                               disabled={isPending}
@@ -311,8 +307,8 @@ export function SignIn({
                             />
 
                             <FieldLabel
-                              htmlFor="rememberMe"
-                              className="cursor-pointer text-sm font-normal"
+                              htmlFor='rememberMe'
+                              className='cursor-pointer text-sm font-normal'
                             >
                               {localization.auth.rememberMe}
                             </FieldLabel>
@@ -323,29 +319,29 @@ export function SignIn({
                   )}
 
                   {Captcha && (
-                    <div className="flex justify-center">{Captcha}</div>
+                    <div className='flex justify-center'>{Captcha}</div>
                   )}
 
                   <form.AuthFormServerError />
 
-                  <div className="flex flex-col gap-3">
+                  <div className='flex flex-col gap-3'>
                     <form.AuthFormSubmitButton
                       isPending={signInEmailPending}
-                      className="relative overflow-visible"
+                      className='relative overflow-visible'
                       disabled={isPending}
                     >
                       {localization.auth.signIn}
 
-                      <LastUsedBadge method="email" floating />
+                      <LastUsedBadge method='email' floating />
                     </form.AuthFormSubmitButton>
 
                     {plugins.flatMap((plugin) =>
                       (plugin.authButtons ?? []).map((AuthButton, index) => (
                         <AuthButton
                           key={`${plugin.id}-${index.toString()}`}
-                          view="signIn"
+                          view='signIn'
                         />
-                      )),
+                      ))
                     )}
                   </div>
                 </FieldGroup>
@@ -353,26 +349,26 @@ export function SignIn({
             </form.AppForm>
           )}
 
-          {socialPosition === "bottom" && (
+          {socialPosition === 'bottom' && (
             <>
               {showSeparator && (
-                <FieldSeparator className="*:data-[slot=field-separator-content]:bg-card flex items-center text-xs">
+                <FieldSeparator className='*:data-[slot=field-separator-content]:bg-card flex items-center text-xs'>
                   {localization.auth.or}
                 </FieldSeparator>
               )}
 
               {socialProviders && socialProviders.length > 0 && (
-                <ProviderButtons socialLayout={socialLayout} view="signIn" />
+                <ProviderButtons socialLayout={socialLayout} view='signIn' />
               )}
             </>
           )}
         </div>
 
-        <div className="mt-4 flex w-full flex-col items-center gap-3">
+        <div className='mt-4 flex w-full flex-col items-center gap-3'>
           {emailAndPassword?.enabled && emailAndPassword?.forgotPassword && (
             <Link
               href={`${basePaths.auth}/${viewPaths.auth.forgotPassword}`}
-              className="self-center text-sm underline-offset-4 hover:underline"
+              className='self-center text-sm underline-offset-4 hover:underline'
             >
               {localization.auth.forgotPasswordLink}
             </Link>
@@ -383,5 +379,5 @@ export function SignIn({
         </div>
       </CardContent>
     </Card>
-  );
+  )
 }

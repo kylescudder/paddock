@@ -1,16 +1,16 @@
-import type { ReactNode } from "react";
-import type { QueryClient } from "@tanstack/react-query";
-import { QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from 'react'
+import type { QueryClient } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import {
   HeadContent,
   Outlet,
   Scripts,
-  createRootRouteWithContext,
-} from "@tanstack/react-router";
-import { getAppConfig } from "../lib/config";
-import { Toaster } from "@/components/ui/sonner";
-import appCss from "../styles.css?url";
-import authCss from "../auth.css?url";
+  createRootRouteWithContext
+} from '@tanstack/react-router'
+import { getAppConfig } from '../lib/config'
+import { Toaster } from '@/components/ui/sonner'
+import appCss from '../styles.css?url'
+import authCss from '../auth.css?url'
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   {
@@ -18,38 +18,38 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     loader: ({ context }) => context.app,
     head: () => ({
       meta: [
-        { charSet: "utf-8" },
-        { name: "viewport", content: "width=device-width, initial-scale=1.0" },
-        { name: "theme-color", content: "#101111" },
-        { title: "Paddock — Formula 1 artwork" },
+        { charSet: 'utf-8' },
+        { name: 'viewport', content: 'width=device-width, initial-scale=1.0' },
+        { name: 'theme-color', content: '#101111' },
+        { title: 'Paddock — Formula 1 artwork' },
         {
-          name: "description",
+          name: 'description',
           content:
-            "A calendar-aware Formula 1 artwork library. Every season, every session, ready for your media library.",
-        },
+            'A calendar-aware Formula 1 artwork library. Every season, every session, ready for your media library.'
+        }
       ],
       links: [
-        { rel: "stylesheet", href: appCss },
-        { rel: "stylesheet", href: authCss },
-        { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
-      ],
+        { rel: 'stylesheet', href: appCss },
+        { rel: 'stylesheet', href: authCss },
+        { rel: 'icon', href: '/favicon.svg', type: 'image/svg+xml' }
+      ]
     }),
     component: RootComponent,
     notFoundComponent: () => (
-      <div className="fatal">
+      <div className='fatal'>
         <h1>This lap doesn’t exist.</h1>
         <p>
-          <a href="/">Return to the collection</a>
+          <a href='/'>Return to the collection</a>
         </p>
       </div>
-    ),
-  },
-);
+    )
+  }
+)
 
 function RootComponent() {
-  const { queryClient } = Route.useRouteContext();
+  const { queryClient } = Route.useRouteContext()
   return (
-    <html lang="en">
+    <html lang='en'>
       <head>
         <HeadContent />
       </head>
@@ -61,5 +61,5 @@ function RootComponent() {
         <Scripts />
       </body>
     </html>
-  );
+  )
 }
