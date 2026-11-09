@@ -17,7 +17,8 @@
     "test:e2e": "bunx --no-install playwright test --config e2e/playwright.config.ts",
     "test:connections": "bun deploy/test-connection-budget.ts",
     "db:generate": "bun --bun drizzle-kit generate",
-    "db:check": "bun --bun drizzle-kit check"
+    "db:check": "bun --bun drizzle-kit check",
+    "prepare": "husky"
   },
   "engines": {
     "bun": ">=1.4.0"
@@ -64,9 +65,14 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "happy-dom": "21.0.4",
-    "prettier": "^3.9.10",
+    "husky": "9.1.7",
+    "lint-staged": "17.6.0",
+    "prettier": "3.9.10",
     "tailwindcss": "4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.4"
+  },
+  "lint-staged": {
+    "*": "prettier --check --ignore-unknown"
   }
 }

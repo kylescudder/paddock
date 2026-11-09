@@ -73,14 +73,13 @@ Mappings use persistent event/session identities rather than round numbers. Padd
 
 ## Hosting and data
 
-See [host deployment](deploy/README.md) and [host handoff](docs/host-handoff.md). GitHub Actions publishes attested multi-platform images; the host's existing Cloudflare Access → Tunnel → Caddy pattern queues verified deployments with backups and rollback.
+See [host deployment](deploy/README.md), which covers database provisioning, Cloudflare Access, the deploy webhook and rollback. GitHub Actions publishes attested multi-platform images; the host's existing Cloudflare Access → Tunnel → Caddy pattern queues verified deployments with backups and rollback.
 
 State lives in PostgreSQL (`paddock`, via the host's existing platform database). Generated backgrounds and cached exports live in persistent `data/`. Run one app instance: its in-process queue/scheduler owns inference and calendar checks. Later-season background overrides do not change completed seasons.
 
 ## Sources and checks
 
-- [Artwork audit](docs/artwork-audit.md): 48 Illustrator files, 126 artboards, 25 original backgrounds.
-- [Font sources](docs/font-sources.md); `assets/artwork.json` contains measured layouts and provenance.
+- The imported archive has 48 Illustrator files, 126 artboards and 25 original backgrounds. `assets/artwork.json` contains measured layouts, font families, official font URLs and provenance. The fonts are publicly downloadable but not openly licensed, so they are never committed.
 - `python3 scripts/import-archive.py --archive ~/Archive.zip` reproduces the import with checked-in measurements. Optional `--inspect-ai` rebuilds measurements using PyMuPDF.
 - `bun run test:e2e` runs the Emby selection/review/save journey in Chromium at desktop and mobile widths, including reload persistence and empty/error states. First run `bun run setup`, `bunx --no-install playwright install chromium`, and create `paddock_e2e_test` in the local PostgreSQL instance (or set `E2E_DATABASE_URL` to an isolated database ending in `_e2e_test`). The fixture resets that database, uses the real app and API handlers, and substitutes the signed-in session, Emby, and OpenRouter at their external boundaries; live integrations are not exercised. Reports and screenshots are saved in `.local/emby-selection/`.
 - `bun run test` checks authorization (Better Auth, including allowlisted sign-in, single-use codes/links, email limits and redirect safety), limits, discovery, rendering, calendar reconciliation and Emby uploads with isolated test providers.
