@@ -2,7 +2,7 @@ import { test, expect } from 'bun:test'
 import { OpenRouter } from '../server/openrouter.ts'
 import type { Store } from '../server/db.ts'
 import { owner } from '../server/api.ts'
-import { useServices, type Services } from '../server/services.ts'
+import { setServices, type Services } from '../server/services.ts'
 import { guardOverrides } from '../server/guard.ts'
 
 const spending = {
@@ -79,7 +79,7 @@ test('unconfigured and failed spending never become a zero-dollar success', asyn
 
 test('spending is private, uncached and does not expose key metadata', async () => {
   let calls = 0
-  useServices({
+  setServices({
     router: router((async () => {
       calls++
       return Response.json({ data: spending })
@@ -105,6 +105,6 @@ test('spending is private, uncached and does not expose key metadata', async () 
     expect(calls).toBe(1)
   } finally {
     guardOverrides.current = undefined
-    useServices(undefined)
+    setServices(undefined)
   }
 })

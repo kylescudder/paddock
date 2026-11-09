@@ -68,6 +68,6 @@ export function services(): Promise<Services> {
   return slot.__paddock
 }
 // Tests inject isolated services; production never calls this.
-export function useServices(value: Services | undefined) {
+export function setServices(value: Services | undefined) {
   slot.__paddock = value && Promise.resolve(value)
 }

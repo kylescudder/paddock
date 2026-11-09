@@ -11,7 +11,7 @@ import { createProfileHandler } from '../server/profile.ts'
 import { readAuthEnv } from '../server/auth-env.ts'
 import { guardOverrides } from '../server/guard.ts'
 import { owner } from '../server/api.ts'
-import { useServices, type Services } from '../server/services.ts'
+import { setServices, type Services } from '../server/services.ts'
 import { closeConnection } from '../server/database.ts'
 
 // A disposable database only: these tests delete every auth_* row.
@@ -118,7 +118,7 @@ async function adminMe(fixture: Fixture, cookie: string, method = 'GET') {
     betterAuth: async () => fixture.access,
     config: { appUrl: origin }
   }
-  useServices({} as Services)
+  setServices({} as Services)
   try {
     return await owner.me({
       request: new Request(origin + '/api/admin/me', {
@@ -128,7 +128,7 @@ async function adminMe(fixture: Fixture, cookie: string, method = 'GET') {
     })
   } finally {
     guardOverrides.current = undefined
-    useServices(undefined)
+    setServices(undefined)
   }
 }
 
@@ -883,7 +883,7 @@ test('an unconfigured Better Auth keeps the owner workspace closed', async () =>
     },
     config: { appUrl: origin }
   }
-  useServices({} as Services)
+  setServices({} as Services)
   try {
     const response = await owner.me({
       request: new Request(origin + '/api/admin/me')
@@ -892,6 +892,6 @@ test('an unconfigured Better Auth keeps the owner workspace closed', async () =>
     assert.doesNotMatch(await response.text(), /SECRET/)
   } finally {
     guardOverrides.current = undefined
-    useServices(undefined)
+    setServices(undefined)
   }
 })

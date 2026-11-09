@@ -25,7 +25,7 @@ import {
   readImageUrl
 } from '../server/openrouter.ts'
 import { Emby, inferSession, matchItem } from '../server/emby.ts'
-import { useServices, type Services } from '../server/services.ts'
+import { setServices, type Services } from '../server/services.ts'
 import { guardOverrides } from '../server/guard.ts'
 import { image, owner } from '../server/api.ts'
 import { config } from '../server/config.ts'
@@ -437,7 +437,7 @@ test('Emby uploads a base64 PNG once per changed version, and keeps errors retry
 test('admin routes deny anonymous users and cross-origin mutations before any inference runs', async () => {
   const f = await fixture()
   let inferenceCalls = 0
-  useServices({
+  setServices({
     store: f.store,
     artwork: {} as Artwork,
     router: {} as OpenRouter,
@@ -494,13 +494,13 @@ test('admin routes deny anonymous users and cross-origin mutations before any in
     assert.equal(inferenceCalls, 1)
   } finally {
     guardOverrides.current = undefined
-    useServices(undefined)
+    setServices(undefined)
     f.close()
   }
 })
 test('without sign-in settings all admin APIs fail closed', async () => {
   const f = await fixture()
-  useServices({ store: f.store, config } as unknown as Services)
+  setServices({ store: f.store, config } as unknown as Services)
   guardOverrides.current = {
     betterAuth: async () => {
       throw new Error('Invalid environment variables: BETTER_AUTH_SECRET')
@@ -524,7 +524,7 @@ test('without sign-in settings all admin APIs fail closed', async () => {
     )
   } finally {
     guardOverrides.current = undefined
-    useServices(undefined)
+    setServices(undefined)
     f.close()
   }
 })
@@ -584,7 +584,7 @@ test('Emby selection persists a show and inspects only its episodes across seaso
       })
     }) as typeof fetch
   )
-  useServices({
+  setServices({
     store: f.store,
     emby,
     router: {} as OpenRouter,
@@ -649,7 +649,7 @@ test('Emby selection persists a show and inspects only its episodes across seaso
     assert.equal((await owner.embyShows(request('emby/shows'))).status, 400)
   } finally {
     guardOverrides.current = undefined
-    useServices(undefined)
+    setServices(undefined)
     f.close()
   }
 })
@@ -724,7 +724,7 @@ test('large saved backgrounds load through thumbnail and 4K image endpoints', as
     await writeFile(file, background)
     await f.store.saveBackground('melbourne:2026', file, 'large-background')
     const artwork = new Artwork(f.store, root, dataDir)
-    useServices({ store: f.store, artwork } as Services)
+    setServices({ store: f.store, artwork } as Services)
     const event = (await f.store.event('2026-australian'))!
     const entry = await artwork.libraryEvent(event)
     assert.equal(entry.backgroundReady, true)
@@ -758,7 +758,7 @@ test('large saved backgrounds load through thumbnail and 4K image endpoints', as
       }
     }
   } finally {
-    useServices(undefined)
+    setServices(undefined)
     await rm(dataDir, { recursive: true, force: true })
     f.close()
   }

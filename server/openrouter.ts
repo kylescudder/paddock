@@ -187,7 +187,7 @@ export async function readImageUrl(
       url.username ||
       url.password ||
       (url.port && url.port !== '443') ||
-      isIP(url.hostname.replace(/[\[\]]/g, '')) ||
+      isIP(url.hostname.replace(/[[\]]/g, '')) ||
       url.hostname === 'localhost' ||
       url.hostname.endsWith('.local')
     )

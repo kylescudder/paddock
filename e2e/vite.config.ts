@@ -11,7 +11,7 @@ import { OpenRouter } from '../server/openrouter.ts'
 import { Emby } from '../server/emby.ts'
 import { Jobs } from '../server/jobs.ts'
 import { config } from '../server/config.ts'
-import { useServices } from '../server/services.ts'
+import { setServices } from '../server/services.ts'
 import { guardOverrides } from '../server/guard.ts'
 import { owner, library, health } from '../server/api.ts'
 import { studio } from '../server/studio.ts'
@@ -158,7 +158,7 @@ const emby = new Emby(
     })
   }) as typeof fetch
 )
-useServices({
+setServices({
   store,
   artwork,
   router,

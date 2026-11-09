@@ -13,7 +13,7 @@ import { OpenRouter } from '../server/openrouter.ts'
 import { Emby } from '../server/emby.ts'
 import { Jobs } from '../server/jobs.ts'
 import { studio } from '../server/studio.ts'
-import { useServices, type Services } from '../server/services.ts'
+import { setServices, type Services } from '../server/services.ts'
 import { guardOverrides } from '../server/guard.ts'
 import { config } from '../server/config.ts'
 import type {
@@ -118,7 +118,7 @@ beforeEach(async () => {
   })
   const emby = new Emby(store, artwork, '', '')
   jobs = new Jobs(store, artwork, router, emby, true, true, String)
-  useServices({ store, artwork, router, emby, jobs, config } as Services)
+  setServices({ store, artwork, router, emby, jobs, config } as Services)
   guardOverrides.current = {
     identity: () => ({ userId: 'studio-owner', isAuthenticated: true }),
     config: { appUrl }
@@ -126,7 +126,7 @@ beforeEach(async () => {
 })
 afterAll(async () => {
   guardOverrides.current = undefined
-  useServices(undefined)
+  setServices(undefined)
   await sql.end()
   if (dataDir) await rm(dataDir, { recursive: true, force: true })
 })
