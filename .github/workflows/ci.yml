@@ -31,6 +31,8 @@ jobs:
           persist-credentials: false
       - name: Typecheck and build with the frozen lockfile, and prepare official fonts
         run: docker build --target build -t paddock:checks .
+      - name: Lint
+        run: docker run --rm paddock:checks bun run lint
       - name: Check formatting, rendering, calendar changes, model discovery, admin sign-in restrictions and Emby updates
         run: |
           docker run --rm --network host \
