@@ -46,7 +46,7 @@
     "fontkit": "^2.0.4",
     "input-otp": "1.5.0",
     "lucide-react": "^1.59.0",
-    "postgres": "^3.4.9",
+    "postgres": "^4.0.0",
     "radix-ui": "1.8.1",
     "react": "^19.2.3",
     "react-day-picker": "10.0.2",
