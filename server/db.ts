@@ -132,9 +132,11 @@ export class Store {
   // Applies a whole season's changes atomically so a failure never leaves a half-updated calendar.
   async transaction<T>(work: (tx: Store) => Promise<T>): Promise<T> {
     const run = (tx: TransactionSql) => work(new Store(this.pool, tx))
-    return (await ('begin' in this.sql
-      ? this.sql.begin(run)
-      : this.sql.savepoint(run))) as T
+    // postgres.js v4 gives transaction clients a `begin` that opens a savepoint too,
+    // so narrow on `savepoint`, which only transaction clients have.
+    return (await ('savepoint' in this.sql
+      ? this.sql.savepoint(run)
+      : this.sql.begin(run))) as T
   }
   async backgrounds(): Promise<Map<string, Background>> {
     const rows = await this.sql<
