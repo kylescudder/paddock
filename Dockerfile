@@ -31,5 +31,6 @@ COPY deploy/entrypoint.sh /app/entrypoint.sh
 RUN mkdir -p /app/data && chown -R 501:20 /app/data && chmod 755 /app/entrypoint.sh
 USER 501:20
 EXPOSE 3000
+# Health ownership: deploy/healthcheck.md at the repository root.
 HEALTHCHECK --interval=20s --timeout=5s --start-period=20s --retries=3 CMD bun -e "const r = await fetch('http://127.0.0.1:3000/api/health'); process.exit(r.ok ? 0 : 1)"
 ENTRYPOINT ["/app/entrypoint.sh"]
