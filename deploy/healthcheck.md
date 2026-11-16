@@ -19,15 +19,21 @@ container probes remain separate.
 1. Merge and publish an attested main image containing the image health check.
 2. Inspect that exact image's `Config.Healthcheck` and verify its probe under the
    production user, read-only filesystem, networks and resource limits.
-3. Take the app's existing `state/deploy.lock`, retain a protected copy of its host
+3. Deploy this first image through deploy-core while retaining the working host
+   override. Require full acceptance. The running image must now contain an
+   embedded probe before it can be the rollback target for the next release.
+4. Take the app's existing `state/deploy.lock`, retain a protected copy of its host
    Compose file, and remove only the application service's `healthcheck` override.
    Keep credentials, mounts, networking and all unrelated service settings intact.
-   Validate Compose without printing its resolved environment.
-4. Release the lock, then redeploy the attested digest through deploy-core. Require
-   Docker health, full acceptance and matching public revision/host acknowledgement.
-5. Keep a compatible previous image and the saved Compose file. If the previous
-   image has no embedded check, restore its saved host probe before rolling back;
-   do not treat a container with no health check as verified healthy.
+   Validate Compose without printing its resolved environment. Release the lock.
+5. Deploy the next distinct attested image digest through deploy-core. It recreates
+   the application with the inherited image probe and can roll back to the first
+   embedded-check image. Re-requesting the same healthy digest only reruns
+   acceptance; it does not recreate the container or adopt changed Compose settings.
+6. Require Docker health, full acceptance and matching public revision/host
+   acknowledgement. Keep a compatible previous image and the saved Compose file.
+   If rolling back further to an image without an embedded check, restore its
+   saved host probe first; a container with no check is not verified healthy.
 
 Do not copy a repository Compose file wholesale over Herman's maintained file.
 Image publication alone does not remove an existing host override. Stage the new
