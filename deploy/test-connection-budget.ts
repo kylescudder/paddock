@@ -5,8 +5,8 @@ import postgres, { type Sql } from 'postgres'
 import { connection, closeConnection } from '../server/database'
 import { Store } from '../server/db'
 import { sql as drizzleSql } from 'drizzle-orm'
-function connect(url: string, max: number, connect_timeout = 10) {
-  return adapt(postgres(url, { max, idle_timeout: 20, connect_timeout }))
+function connect(url: string, max: number) {
+  return adapt(postgres(url, { max, idle_timeout: 20, connect_timeout: 2 }))
 }
 function adapt(pool: Sql): Client {
   return {
@@ -76,7 +76,7 @@ async function checkBudget() {
     const deploymentPool = createDeploymentDatabase(url.toString())
     assert.equal(deploymentPool.options.max, 1)
     assert.equal(deploymentPool.options.idle_timeout, 20)
-    assert.equal(deploymentPool.options.connect_timeout, 10)
+    assert.equal(deploymentPool.options.connect_timeout, 2)
     const deployment = adapt(deploymentPool)
     const concurrent = await Promise.all(
       Array.from({ length: 16 }, () =>
@@ -86,9 +86,9 @@ async function checkBudget() {
     assert.equal(new Set(concurrent.map(([row]) => row!.pid)).size, 4)
     const health = connect(url.toString(), 1)
     const spare = connect(url.toString(), 2)
-    // postgres.js v4 retries "too many connections" until connect_timeout, so a short
-    // timeout keeps this a fast check; the default would race the 20s idle timeout.
-    const overflow = connect(url.toString(), 1, 1)
+    // postgres.js v4 retries "too many connections" until connect_timeout (2 s
+    // here, as in the app), so the refused ninth connection rejects in seconds.
+    const overflow = connect(url.toString(), 1)
     pools.push(deployment, health, spare, overflow)
     // Hold every application slot, rather than relying on a quiet test pool.
     for (let i = 0; i < 4; i++) {

@@ -20,7 +20,7 @@ if (
   throw new Error(
     'Migration tests require a disposable localhost database ending in _test'
   )
-const sql = postgres(url, { max: 1, idle_timeout: 20, connect_timeout: 10 })
+const sql = postgres(url, { max: 1, idle_timeout: 20, connect_timeout: 2 })
 afterAll(() => sql.end())
 async function reset() {
   await sql`DROP SCHEMA IF EXISTS drizzle CASCADE`
@@ -161,7 +161,7 @@ test('non-superuser owner migrates while restricted runtime can use data but can
   await sql.unsafe(
     `CREATE ROLE ${runtime} LOGIN NOSUPERUSER CONNECTION LIMIT 8`
   )
-  const client = postgres(roleUrl(runtime), { max: 1 })
+  const client = postgres(roleUrl(runtime), { max: 1, connect_timeout: 2 })
   try {
     await sql.unsafe(`GRANT CONNECT, CREATE ON DATABASE "${db}" TO ${owner}`)
     await sql.unsafe(`GRANT CONNECT ON DATABASE "${db}" TO ${runtime}`)
@@ -180,7 +180,10 @@ test('non-superuser owner migrates while restricted runtime can use data but can
         await sql`DROP SCHEMA public CASCADE`
         await sql.unsafe(`CREATE SCHEMA public AUTHORIZATION ${owner}`)
         await sql.unsafe(`GRANT USAGE ON SCHEMA public TO ${runtime}`)
-        const previous = postgres(roleUrl(owner), { max: 1 })
+        const previous = postgres(roleUrl(owner), {
+          max: 1,
+          connect_timeout: 2
+        })
         try {
           await legacyMigrate(previous)
         } finally {

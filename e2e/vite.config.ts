@@ -26,7 +26,7 @@ if (!new URL(databaseUrl).pathname.endsWith('_e2e_test'))
 const sql = postgres(databaseUrl, {
   max: 4,
   idle_timeout: 20,
-  connect_timeout: 10
+  connect_timeout: 2
 })
 await migrate(databaseUrl)
 await sql`TRUNCATE state, events, backgrounds, jobs, attempts, mappings, overlays, studio_versions, studio_drafts`

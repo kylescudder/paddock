@@ -24,7 +24,7 @@ await migrate(databaseUrl)
 const sql = postgres(databaseUrl, {
   max: 4,
   idle_timeout: 20,
-  connect_timeout: 10,
+  connect_timeout: 2,
   onnotice: () => {}
 })
 const db = drizzle({ client: sql, schema })

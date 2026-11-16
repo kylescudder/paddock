@@ -120,9 +120,10 @@ installs, scripts, builds, generation and migration commands. Drizzle-kit is a
 production dependency because the existing owner one-shot uses the runtime image.
 
 The lazy application client is shared even by simultaneous first callers, with
-`max: 4`, `idle_timeout: 20` and `connect_timeout: 10` (seconds). The separate
+`max: 4`, `idle_timeout: 20` and `connect_timeout: 2` (seconds). The separate
 owner wrapper and deployment clients each use `max: 1` with the same timeouts.
-Drizzle-kit uses its own Postgres.js client capped at one connection. The reserved
+Drizzle-kit uses its own Postgres.js client capped at one connection, with the
+same `connect_timeout` passed in its URL by `drizzle.config.ts`. The reserved
 owner session holds its advisory lock across validation and the kit subprocess;
 validation uses explicit BEGIN/COMMIT/ROLLBACK on that session. Store transactions
 share the pool's Drizzle codecs and use Postgres.js transactions/savepoints, so
@@ -131,6 +132,14 @@ representations from the previous Bun client remain readable; timestamp outputs
 remain ISO strings. State writes retain Bun's JSONB string containing serialized
 JSON, so the previous image's scalar decoder can still read them on rollback.
 No schema/data conversion is needed for the driver change.
+
+Postgres.js v4 retries a connection that PostgreSQL refuses for too many
+connections (SQLSTATE `53300`, for example when a role's `CONNECTION LIMIT` is
+reached) with backoff until `connect_timeout` has passed, instead of failing at
+once as v3 did. Every client sets `connect_timeout: 2`, so a refused connection
+fails in about 3 seconds rather than leaving pages and deployment checks waiting
+(the Postgres.js default is 30 seconds). `bun run test` checks this against a
+role with a one-connection limit.
 
 `server/migrate.ts` remains the deployment/local entrypoint. It takes the existing
 `DATABASE_URL` and `DATABASE_PASSWORD_FILE`, reserves one owner connection for a

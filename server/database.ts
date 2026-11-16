@@ -17,9 +17,12 @@ export async function databaseUrl(): Promise<string> {
 export function connection(): Promise<Sql> {
   // Cache initialization before reading the secret file so simultaneous first
   // callers cannot create independent four-slot pools. A failed read can retry.
+  // postgres.js v4 retries a refused connection (53300, too many connections)
+  // until connect_timeout passes; v3 rejected at once. Keep it short so pages
+  // fail in about 3 s instead of stalling requests during a connection-limit blip.
   pool ??= databaseUrl()
     .then((url) =>
-      postgres(url, { max: 4, idle_timeout: 20, connect_timeout: 10 })
+      postgres(url, { max: 4, idle_timeout: 20, connect_timeout: 2 })
     )
     .catch((error) => {
       pool = undefined
