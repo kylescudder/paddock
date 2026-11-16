@@ -43,7 +43,7 @@ if (!new URL(databaseUrl).pathname.endsWith('_test'))
 const sql = postgres(databaseUrl, {
   max: 4,
   idle_timeout: 20,
-  connect_timeout: 10
+  connect_timeout: 2
 })
 await migrate(databaseUrl)
 afterAll(() => sql.end())

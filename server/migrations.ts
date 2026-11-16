@@ -101,7 +101,7 @@ async function adopt(tx: ReservedSql) {
 }
 
 export async function migrate(url: string) {
-  const pool = postgres(url, { max: 1, idle_timeout: 20, connect_timeout: 10 })
+  const pool = postgres(url, { max: 1, idle_timeout: 20, connect_timeout: 2 })
   let sql: ReservedSql | undefined
   try {
     sql = await pool.reserve()

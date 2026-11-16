@@ -34,7 +34,10 @@ SQL and snapshots in `drizzle/`; commit those with the schema and `bun.lock`.
 owner credentials before starting the app; it safely adopts a compatible existing
 schema or applies generated migrations through drizzle-kit on a fresh database.
 Raw SQL and Drizzle share one Postgres.js application client (max 4, idle 20s,
-connect 10s); owner and deployment clients are separately bounded.
+connect 2s); owner and deployment clients are separately bounded. Postgres.js v4
+retries a connection refused for too many connections until `connect_timeout`, so
+every client sets 2 seconds and a refused connection fails in about 3 seconds
+([details](deploy/README.md#drizzle-adoption-and-rollout)).
 Do not use `drizzle-kit push` or bypass the wrapper for adoption. See
 [deployment migration notes](deploy/README.md#drizzle-adoption-and-rollout) for
 privileges, backups, compatibility checks and rollback.
