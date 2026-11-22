@@ -5,6 +5,15 @@ test('signed-out visitors can open the owner sign-in page at desktop and phone w
 }) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
+  // The e2e server answers every session request with a signed-in owner.
+  // Better Auth returns a null session for a signed-out visitor.
+  await page.route('**/api/auth/get-session', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: 'null'
+    })
+  )
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto('/auth/sign-in')
   await expect(
